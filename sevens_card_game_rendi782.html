@@ -1,0 +1,3551 @@
+<!DOCTYPE html>
+<html lang="id" class="h-full select-none">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>SEVENS7 by.Rendi782</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- PeerJS WebRTC Library for Serverless Real-Time Multiplayer -->
+  <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;700;800&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --felt-dark: #06190f;
+      --felt-mid: #0b2e1b;
+      --felt-light: #124629;
+    }
+
+    * {
+      box-sizing: border-box;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    body {
+      font-family: 'Inter', system-ui, -apple-system, sans-serif;
+      background: radial-gradient(ellipse at center, var(--felt-light) 0%, var(--felt-mid) 58%, var(--felt-dark) 100%);
+      color: #f8fafc;
+      overflow-x: hidden;
+    }
+
+    .font-mono-num {
+      font-family: 'JetBrains Mono', monospace;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .felt-surface {
+      background-image: radial-gradient(rgba(255, 255, 255, 0.03) 1px, transparent 0);
+      background-size: 16px 16px;
+    }
+
+    /* 4x14 Board Grid Responsive Layout: Suit Icon + [A Kiri] + [2..K] + [A Kanan] */
+    .sevens-board-grid {
+      display: grid;
+      grid-template-columns: 30px repeat(14, minmax(0, 1fr));
+      gap: 3px;
+      width: 100%;
+    }
+
+    @media (min-width: 640px) {
+      .sevens-board-grid {
+        grid-template-columns: 42px repeat(14, minmax(0, 1fr));
+        gap: 5px;
+      }
+    }
+
+    .board-slot {
+      aspect-ratio: 5 / 7;
+      position: relative;
+      transition: all 0.2s cubic-bezier(0.22, 1, 0.36, 1);
+    }
+
+    @keyframes cardSnapIn {
+      0% {
+        opacity: 0;
+        transform: scale(1.25) translateY(8px);
+      }
+      70% {
+        transform: scale(0.96) translateY(-1px);
+      }
+      100% {
+        opacity: 1;
+        transform: scale(1) translateY(0);
+      }
+    }
+
+    .animate-card-snap {
+      animation: cardSnapIn 0.25s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+    }
+
+    /* Hand Card Dimensions & States (2-Row Layout: Top 7, Bottom 6 - Fits Mobile Without Horizontal Scroll) */
+    .hand-card {
+      width: clamp(42px, 12.6vw, 56px);
+      height: clamp(60px, 17.8vw, 80px);
+      transition: transform 0.2s cubic-bezier(0.22, 1, 0.36, 1),
+                  box-shadow 0.2s ease,
+                  opacity 0.2s ease,
+                  border-color 0.2s ease;
+      flex-shrink: 0;
+    }
+
+    @media (min-width: 640px) {
+      .hand-card {
+        width: 64px;
+        height: 92px;
+      }
+    }
+
+    @media (min-width: 1024px) {
+      .hand-card {
+        width: 70px;
+        height: 100px;
+      }
+    }
+
+    /* Mode 1: Playable Card onto Board */
+    .hand-card.playable {
+      transform: translateY(-6px);
+      box-shadow: 0 8px 16px -4px rgba(0, 0, 0, 0.65), 0 0 0 2.5px #fbbf24;
+      cursor: pointer;
+      z-index: 10;
+    }
+
+    .hand-card.playable:hover,
+    .hand-card.playable.kb-focused {
+      transform: translateY(-12px) scale(1.06);
+      box-shadow: 0 14px 24px -5px rgba(0, 0, 0, 0.85), 0 0 0 3px #f59e0b, 0 0 16px rgba(251, 191, 36, 0.65);
+      z-index: 30;
+    }
+
+    /* Mode 2: Bury / Matikan Kartu Safe Selection */
+    .hand-card.bury-candidate {
+      transform: translateY(-5px);
+      box-shadow: 0 8px 16px -4px rgba(0, 0, 0, 0.65), 0 0 0 2px #f97316;
+      cursor: pointer;
+      z-index: 10;
+    }
+
+    .hand-card.bury-candidate:hover,
+    .hand-card.bury-candidate.kb-focused {
+      transform: translateY(-11px) scale(1.06);
+      box-shadow: 0 14px 24px -5px rgba(249, 115, 22, 0.55), 0 0 0 3px #fb923c, 0 0 16px rgba(249, 115, 22, 0.55);
+      z-index: 30;
+    }
+
+    .hand-card.hint-glow {
+      box-shadow: 0 16px 28px -4px rgba(6, 182, 212, 0.75), 0 0 0 3.5px #22d3ee !important;
+    }
+
+    .hand-card.unplayable {
+      opacity: 0.52;
+      transform: translateY(2px);
+      filter: saturate(0.7);
+      cursor: not-allowed;
+    }
+
+    /* Mode 0 (First 10 Seconds Think-First Mode): All cards look uniform & clickable */
+    .hand-card.think-first-card {
+      cursor: pointer;
+      transition: transform 0.18s ease, box-shadow 0.18s ease;
+    }
+
+    .hand-card.think-first-card:hover,
+    .hand-card.think-first-card.kb-focused {
+      transform: translateY(-7px) scale(1.03);
+      box-shadow: 0 10px 18px -4px rgba(0, 0, 0, 0.7), 0 0 0 2px #34d399;
+      z-index: 25;
+    }
+
+    @keyframes wrongCardShake {
+      0%, 100% { transform: translateX(0); }
+      20% { transform: translateX(-6px) rotate(-2deg); }
+      40% { transform: translateX(6px) rotate(2deg); }
+      60% { transform: translateX(-5px) rotate(-1deg); }
+      80% { transform: translateX(5px) rotate(1deg); }
+    }
+
+    .animate-wrong-shake {
+      animation: wrongCardShake 0.38s cubic-bezier(0.36, 0.07, 0.19, 0.97) both;
+      box-shadow: 0 0 0 3px #ef4444, 0 0 16px rgba(239, 68, 68, 0.75) !important;
+      z-index: 40;
+    }
+
+    @keyframes wongKalahanPulse {
+      0%, 100% {
+        box-shadow: 0 0 0 3px #ef4444, 0 0 28px rgba(239, 68, 68, 0.65), inset 0 0 24px rgba(239, 68, 68, 0.25);
+      }
+      50% {
+        box-shadow: 0 0 0 4px #fbbf24, 0 0 40px rgba(245, 158, 11, 0.85), inset 0 0 30px rgba(239, 68, 68, 0.4);
+      }
+    }
+
+    .wong-kalahan-spotlight {
+      animation: wongKalahanPulse 1.8s infinite ease-in-out;
+    }
+
+    .board-slot.target-preview {
+      border-color: #22d3ee !important;
+      background-color: rgba(34, 211, 238, 0.25) !important;
+      box-shadow: 0 0 14px rgba(34, 211, 238, 0.6);
+      transform: scale(1.06);
+      z-index: 20;
+    }
+
+    /* Suit Locked Diagonal Stripes Overlay */
+    .suit-locked-row {
+      background: repeating-linear-gradient(
+        -45deg,
+        rgba(15, 23, 42, 0.55),
+        rgba(15, 23, 42, 0.55) 8px,
+        rgba(30, 41, 59, 0.65) 8px,
+        rgba(30, 41, 59, 0.65) 16px
+      );
+    }
+
+    @keyframes chatPopIn {
+      0% { opacity: 0; transform: translateY(8px) scale(0.85); }
+      15% { opacity: 1; transform: translateY(0) scale(1.03); }
+      25% { transform: translateY(0) scale(1); }
+      85% { opacity: 1; transform: translateY(0) scale(1); }
+      100% { opacity: 0; transform: translateY(-6px) scale(0.95); }
+    }
+
+    .animate-chat-bubble {
+      animation: chatPopIn 3.6s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+    }
+
+    .no-scrollbar::-webkit-scrollbar {
+      display: none;
+    }
+    .no-scrollbar {
+      -ms-overflow-style: none;
+      scrollbar-width: none;
+    }
+  </style>
+</head>
+<body class="h-full min-h-screen flex flex-col felt-surface justify-between">
+
+  <!-- =========================================================================
+       TOP HEADER BAR: Clean Branding (SEVENS7 by.Rendi782) & Controls
+       ========================================================================= -->
+  <header class="w-full bg-black/45 backdrop-blur-md border-b border-emerald-800/60 px-2.5 sm:px-5 py-2 flex flex-wrap items-center justify-between gap-2 z-30">
+    <!-- Left: Brand Title SEVENS7 by.Rendi782 -->
+    <div class="flex items-center gap-2.5">
+      <div class="w-9 h-9 rounded-xl bg-gradient-to-br from-slate-100 to-slate-300 border-2 border-amber-400 flex items-center justify-center shadow-md text-slate-950 font-extrabold text-base">
+        7♠
+      </div>
+      <div class="flex items-baseline gap-2">
+        <h1 class="font-extrabold text-base sm:text-lg tracking-tight text-white leading-none">
+          SEVENS<span class="text-amber-400">7</span>
+        </h1>
+        <span class="text-xs sm:text-sm font-bold text-emerald-300 tracking-wide">
+          by.Rendi782
+        </span>
+      </div>
+    </div>
+
+    <!-- Center: Live Turn & Action Log Pill -->
+    <div id="liveActionBanner" class="flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-950/90 border border-emerald-700/60 shadow-inner text-xs font-medium text-emerald-100 max-w-md truncate">
+      <span id="turnPulseDot" class="w-2.5 h-2.5 rounded-full bg-amber-400 animate-pulse shrink-0"></span>
+      <span id="liveActionText" class="truncate">Mempersiapkan meja permainan...</span>
+    </div>
+
+    <!-- Right: Action Buttons -->
+    <div class="flex items-center gap-1.5">
+      <!-- 1-Click Invite Friends Button -->
+      <button onclick="GameApp.handleInviteButtonClick()" title="Undang Teman via Link 1-Klik"
+        class="px-2.5 sm:px-3.5 py-1.5 rounded-lg bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-slate-950 border border-emerald-300 text-xs font-extrabold flex items-center gap-1.5 shadow-md shadow-emerald-500/25 transition active:scale-95">
+        <span>🔗 Undang Teman</span>
+      </button>
+
+      <button onclick="GameApp.triggerHint()" title="Saran Langkah / Kartu Terbaik (Tombol H)"
+        class="px-2.5 py-1.5 rounded-lg bg-cyan-950/85 hover:bg-cyan-900 text-cyan-200 border border-cyan-500/50 text-xs font-semibold flex items-center gap-1 transition active:scale-95">
+        <span>💡 Hint</span>
+        <kbd class="hidden sm:inline-block text-[10px] bg-cyan-900 px-1 rounded text-cyan-200">H</kbd>
+      </button>
+
+      <button onclick="GameApp.openRulesModal()" title="Panduan Aturan & Hitungan Poin"
+        class="px-2.5 py-1.5 rounded-lg bg-emerald-900/80 hover:bg-emerald-800 text-emerald-100 border border-emerald-600/50 text-xs font-semibold flex items-center gap-1 transition active:scale-95">
+        <span class="hidden md:inline">📜 Aturan</span>
+        <span class="md:hidden">📜</span>
+      </button>
+
+      <button onclick="GameApp.toggleSound()" title="Suara Efek Kartu"
+        class="p-1.5 rounded-lg bg-emerald-950/80 hover:bg-emerald-900 text-emerald-200 border border-emerald-700/50 text-xs font-semibold transition active:scale-95">
+        <span id="soundIcon">🔊</span>
+      </button>
+
+      <button id="topNewGameBtn" onclick="GameApp.requestNewGame()" title="Bagi Ulang & Mulai Baru"
+        class="px-2.5 sm:px-3 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 font-extrabold text-xs shadow-sm shadow-amber-500/30 transition active:scale-95">
+        Main Baru
+      </button>
+    </div>
+  </header>
+
+  <!-- =========================================================================
+       MAIN TABLE AREA: 3 Opponents (Rotated Clockwise) + 4x14 Board + Local Player Dock
+       ========================================================================= -->
+  <main class="flex-1 w-full max-w-6xl mx-auto px-2 sm:px-4 py-1.5 flex flex-col justify-between gap-1.5 overflow-hidden">
+
+    <!-- 1. OTHER 3 PLAYERS BAR (Kiri, Atas, Kanan — Rotated relative to local seat) -->
+    <section id="opponentsContainer" class="grid grid-cols-3 gap-2 w-full">
+      <!-- Populated dynamically -->
+    </section>
+
+    <!-- 2. CENTER 4x14 SEVENS BOARD (With Left Ace & Right Ace Closers) -->
+    <section class="w-full bg-emerald-950/70 border border-emerald-800/80 rounded-2xl p-2 sm:p-3 shadow-2xl backdrop-blur-sm">
+      <!-- Column Rank Header: [A Kiri] [2..K] [A Kanan] -->
+      <div class="sevens-board-grid mb-1 items-center">
+        <div class="text-[9px] sm:text-[10px] font-bold text-emerald-400/80 text-center uppercase">Suit</div>
+        <div id="colHeaderAceLeft" class="text-[9px] sm:text-[11px] font-extrabold text-center text-cyan-300 bg-cyan-950/80 rounded py-0.5 border border-cyan-500/40 font-mono-num" title="Penutup As Kiri (Sebelum 2) — Nilai As Mati jadi 1 Poin">A◀</div>
+        <div class="text-[10px] sm:text-xs font-bold text-center text-emerald-300/75 font-mono-num">2</div>
+        <div class="text-[10px] sm:text-xs font-bold text-center text-emerald-300/75 font-mono-num">3</div>
+        <div class="text-[10px] sm:text-xs font-bold text-center text-emerald-300/75 font-mono-num">4</div>
+        <div class="text-[10px] sm:text-xs font-bold text-center text-emerald-300/75 font-mono-num">5</div>
+        <div class="text-[10px] sm:text-xs font-bold text-center text-emerald-300/75 font-mono-num">6</div>
+        <div class="text-[10px] sm:text-xs font-extrabold text-center text-amber-300 bg-amber-500/20 rounded py-0.5 border border-amber-400/40 font-mono-num">7</div>
+        <div class="text-[10px] sm:text-xs font-bold text-center text-emerald-300/75 font-mono-num">8</div>
+        <div class="text-[10px] sm:text-xs font-bold text-center text-emerald-300/75 font-mono-num">9</div>
+        <div class="text-[10px] sm:text-xs font-bold text-center text-emerald-300/75 font-mono-num">10</div>
+        <div class="text-[10px] sm:text-xs font-bold text-center text-emerald-300/75 font-mono-num">J</div>
+        <div class="text-[10px] sm:text-xs font-bold text-center text-emerald-300/75 font-mono-num">Q</div>
+        <div class="text-[10px] sm:text-xs font-bold text-center text-emerald-300/75 font-mono-num">K</div>
+        <div id="colHeaderAceRight" class="text-[9px] sm:text-[11px] font-extrabold text-center text-purple-300 bg-purple-950/80 rounded py-0.5 border border-purple-500/40 font-mono-num" title="Penutup As Kanan (Setelah King) — Nilai As Mati jadi 15 Poin">▶A</div>
+      </div>
+
+      <!-- 4 Suit Rows Container -->
+      <div id="boardRowsContainer" class="flex flex-col gap-1.5">
+        <!-- Populated dynamically: Spades (Sekop), Hearts (Hati), Clubs (Keriting), Diamonds (Wajik) -->
+      </div>
+    </section>
+
+    <!-- 3. LOCAL PLAYER CONTROL DOCK, QUICK CHAT, BURIED CARDS DRAWER & HAND -->
+    <section id="humanPlayerDock" class="w-full bg-black/40 border border-emerald-800/70 rounded-2xl p-2.5 sm:p-3 flex flex-col gap-2 shadow-xl transition-all duration-300 relative">
+      <!-- Floating Quick Chat Bubble for Local Player -->
+      <div id="localChatBubbleContainer" class="pointer-events-none absolute -top-10 left-6 z-40"></div>
+
+      <!-- Top Bar of Player Dock -->
+      <div class="flex flex-wrap items-center justify-between gap-2 border-b border-emerald-800/50 pb-2">
+        <!-- Left: Player Identity, Turn Mode Badge, Buried Cards Counter -->
+        <div class="flex flex-wrap items-center gap-2">
+          <div class="px-2.5 py-1 rounded-lg bg-emerald-900/90 border border-emerald-600/50 flex items-center gap-1.5">
+            <span id="localPlayerAvatar" class="text-sm">👤</span>
+            <span id="localPlayerName" class="font-bold text-xs sm:text-sm text-white">Anda</span>
+            <span id="localSeatBadge" class="text-[10px] px-1.5 py-0.2 rounded bg-emerald-950 text-emerald-300 border border-emerald-700/60 font-mono-num">Kursi 1</span>
+          </div>
+
+          <!-- Dynamic Turn Mode Pill -->
+          <div id="humanModePill" class="px-2.5 py-1 rounded-lg text-xs font-extrabold border">
+            Menunggu Giliran
+          </div>
+
+          <div class="flex items-center gap-1.5 text-xs bg-emerald-950/90 px-2.5 py-1 rounded-lg border border-emerald-800/70">
+            <span class="text-emerald-400">Sisa Tangan:</span>
+            <span id="humanCardCount" class="font-mono-num font-bold text-white">13</span>
+          </div>
+
+          <!-- Button to toggle viewing own buried cards & live penalty points -->
+          <button onclick="GameApp.toggleBuriedTray()"
+            class="flex items-center gap-1.5 text-xs bg-slate-900 hover:bg-slate-800 px-2.5 py-1 rounded-lg border border-slate-700 transition">
+            <span>🎴 Kartu Mati Saya:</span>
+            <span id="humanBuriedCount" class="font-mono-num font-extrabold text-orange-400">0 lbr</span>
+            <span class="text-slate-500">|</span>
+            <span id="humanLivePenaltyPts" class="font-mono-num font-extrabold text-amber-300">0 Poin</span>
+            <span id="buriedTrayChevron" class="text-[10px] text-slate-400 ml-0.5">▼</span>
+          </button>
+        </div>
+
+        <!-- Right: Quick Chat Picker + Hint Toast + Keyboard Legend -->
+        <div class="flex items-center gap-2 ml-auto relative">
+          <div id="hintReasonToast" class="hidden text-xs font-semibold px-3 py-1 rounded-lg bg-cyan-950/95 border border-cyan-400/70 text-cyan-200">
+          </div>
+
+          <!-- Quick Chat Toggle Button -->
+          <div class="relative">
+            <button onclick="GameApp.toggleQuickChatMenu()"
+              class="px-2.5 py-1 rounded-lg bg-indigo-950/90 hover:bg-indigo-900 text-indigo-200 border border-indigo-500/50 text-xs font-bold flex items-center gap-1 transition active:scale-95">
+              <span>💬 Chat / Emote</span>
+            </button>
+
+            <!-- Quick Chat Popup Menu -->
+            <div id="quickChatMenu" class="hidden absolute bottom-9 right-0 w-60 bg-slate-900/95 backdrop-blur-md border border-indigo-500/60 rounded-xl p-2 shadow-2xl z-50 flex-col gap-1">
+              <div class="text-[10px] font-bold text-indigo-300 px-2 py-0.5 uppercase tracking-wider">Kirim Pesan Cepat</div>
+              <button onclick="GameApp.sendQuickChat('Jangan tutup jalurku! 😭')" class="text-left text-xs px-2.5 py-1.5 rounded-lg hover:bg-indigo-900/70 text-slate-100 transition">Jangan tutup jalurku! 😭</button>
+              <button onclick="GameApp.sendQuickChat('Awas jebakan! 👀')" class="text-left text-xs px-2.5 py-1.5 rounded-lg hover:bg-indigo-900/70 text-slate-100 transition">Awas jebakan! 👀</button>
+              <button onclick="GameApp.sendQuickChat('Mampus buntu! 🤣')" class="text-left text-xs px-2.5 py-1.5 rounded-lg hover:bg-indigo-900/70 text-slate-100 transition">Mampus buntu! 🤣</button>
+              <button onclick="GameApp.sendQuickChat('Gas terus! 🔥')" class="text-left text-xs px-2.5 py-1.5 rounded-lg hover:bg-indigo-900/70 text-slate-100 transition">Gas terus! 🔥</button>
+              <button onclick="GameApp.sendQuickChat('Ampun suhu! 🙏')" class="text-left text-xs px-2.5 py-1.5 rounded-lg hover:bg-indigo-900/70 text-slate-100 transition">Ampun suhu! 🙏</button>
+              <button onclick="GameApp.sendQuickChat('GGWP! 👏')" class="text-left text-xs px-2.5 py-1.5 rounded-lg hover:bg-indigo-900/70 text-slate-100 transition">GGWP! 👏</button>
+            </div>
+          </div>
+
+          <div class="hidden xl:flex items-center gap-1.5 text-[11px] text-emerald-300/75">
+            <kbd class="px-1.5 py-0.5 bg-emerald-950 border border-emerald-700 rounded">←/→/↑/↓</kbd> Pilih
+            <kbd class="px-1.5 py-0.5 bg-emerald-950 border border-emerald-700 rounded">Enter</kbd> Jalan/Tutup
+            <kbd class="px-1.5 py-0.5 bg-emerald-950 border border-emerald-700 rounded">H</kbd> Hint
+          </div>
+        </div>
+      </div>
+
+      <!-- Collapsible Drawer: Local Player's Buried Cards ("Kartu Mati") -->
+      <div id="humanBuriedTray" class="hidden bg-slate-950/85 border border-slate-800 rounded-xl p-2.5 flex-col gap-1.5">
+        <div class="flex items-center justify-between text-[11px] text-slate-300">
+          <span class="font-semibold">Daftar Kartu Mati Anda (Hanya Anda yang bisa melihat ini selama permainan):</span>
+          <span id="humanBuriedFormulaText" class="font-mono-num text-amber-300 font-bold">Total: 0 Poin</span>
+        </div>
+        <div id="humanBuriedCardsList" class="flex flex-wrap items-center gap-1.5 min-h-[38px]">
+          <!-- Populated dynamically -->
+        </div>
+      </div>
+
+      <!-- Player Hand Cards Container (2-Row Layout: Top 7 Cards, Bottom 6 Cards - No Horizontal Scroll) -->
+      <div class="relative w-full pt-2.5 pb-1 px-0.5 overflow-visible">
+        <div id="humanHandContainer" class="flex flex-col items-center justify-center gap-2 sm:gap-2.5 w-full min-h-[126px] sm:min-h-[190px]">
+          <!-- Populated dynamically with 2 rows: Row 1 (up to 7 cards) & Row 2 (up to 6 cards) -->
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- =========================================================================
+       MODAL 0A: MANDATORY PLAYER NAME POP-UP (WAJIB ISI NAMA SEBELUM MAIN / GABUNG UNDANGAN)
+       ========================================================================= -->
+  <div id="mandatoryNameModal" class="fixed inset-0 bg-black/90 backdrop-blur-md z-50 hidden items-center justify-center p-4">
+    <div class="bg-slate-900 border-2 border-emerald-400 rounded-2xl max-w-md w-full p-5 sm:p-6 shadow-2xl text-slate-100 relative">
+      <div class="flex items-center gap-3 mb-4">
+        <div id="nameModalIcon" class="w-12 h-12 rounded-2xl bg-gradient-to-br from-emerald-400 to-teal-500 text-slate-950 flex items-center justify-center text-2xl font-extrabold shadow-lg shrink-0">
+          🎉
+        </div>
+        <div>
+          <span id="nameModalTag" class="text-[10px] font-extrabold uppercase tracking-wider px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-400/40">
+            Undangan Mabar Online
+          </span>
+          <h2 id="nameModalTitle" class="text-base sm:text-lg font-extrabold text-white mt-1">
+            Anda Diundang Bermain 7♠!
+          </h2>
+        </div>
+      </div>
+
+      <p id="nameModalSubtitle" class="text-xs text-slate-300 leading-relaxed mb-4">
+        Teman Anda mengundang Anda ke meja permainan <strong>Sevens (7♠ Tutup Kartu)</strong>. Masukkan nama panggilan Anda terlebih dahulu sebelum duduk di meja:
+      </p>
+
+      <!-- Avatar Picker -->
+      <div class="mb-3">
+        <label class="block text-[11px] font-bold text-slate-300 mb-1.5">Pilih Avatar Meja Anda:</label>
+        <div id="nameModalAvatarList" class="flex items-center gap-2">
+          <button type="button" onclick="MultiplayerManager.selectAvatar('😎')" data-avatar="😎" class="avatar-pick-btn w-10 h-10 rounded-xl bg-slate-800 border-2 border-emerald-400 text-lg flex items-center justify-center transition">😎</button>
+          <button type="button" onclick="MultiplayerManager.selectAvatar('🤠')" data-avatar="🤠" class="avatar-pick-btn w-10 h-10 rounded-xl bg-slate-950 border border-slate-700 text-lg flex items-center justify-center transition">🤠</button>
+          <button type="button" onclick="MultiplayerManager.selectAvatar('🦊')" data-avatar="🦊" class="avatar-pick-btn w-10 h-10 rounded-xl bg-slate-950 border border-slate-700 text-lg flex items-center justify-center transition">🦊</button>
+          <button type="button" onclick="MultiplayerManager.selectAvatar('🐯')" data-avatar="🐯" class="avatar-pick-btn w-10 h-10 rounded-xl bg-slate-950 border border-slate-700 text-lg flex items-center justify-center transition">🐯</button>
+          <button type="button" onclick="MultiplayerManager.selectAvatar('🐼')" data-avatar="🐼" class="avatar-pick-btn w-10 h-10 rounded-xl bg-slate-950 border border-slate-700 text-lg flex items-center justify-center transition">🐼</button>
+          <button type="button" onclick="MultiplayerManager.selectAvatar('👑')" data-avatar="👑" class="avatar-pick-btn w-10 h-10 rounded-xl bg-slate-950 border border-slate-700 text-lg flex items-center justify-center transition">👑</button>
+        </div>
+      </div>
+
+      <!-- Mandatory Name Input -->
+      <div class="mb-2">
+        <label for="mandatoryNameInput" class="block text-xs font-bold text-white mb-1.5">
+          Nama Panggilan Pemain <span class="text-red-400">* (Wajib Diisi)</span>
+        </label>
+        <input id="mandatoryNameInput" type="text" maxlength="16" autocomplete="off"
+          placeholder="Ketik nama Anda (min. 2 huruf)..."
+          oninput="MultiplayerManager.clearNameError()"
+          onkeydown="if(event.key === 'Enter') MultiplayerManager.submitMandatoryName()"
+          class="w-full bg-slate-950 border-2 border-slate-700 focus:border-emerald-400 rounded-xl px-3.5 py-2.5 text-sm font-extrabold text-white outline-none transition" />
+        <p id="mandatoryNameError" class="hidden text-[11px] font-bold text-red-400 mt-1.5 flex items-center gap-1">
+          <span>⚠️ Wajib masukkan nama panggilan minimal 2 karakter sebelum bermain!</span>
+        </p>
+      </div>
+
+      <div class="mt-5 flex items-center gap-2">
+        <button id="nameModalCancelBtn" type="button" onclick="MultiplayerManager.cancelNameModal()"
+          class="hidden px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-xs transition">
+          Batal
+        </button>
+        <button id="nameModalSubmitBtn" type="button" onclick="MultiplayerManager.submitMandatoryName()"
+          class="flex-1 py-3 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-400 hover:from-emerald-400 hover:to-teal-300 text-slate-950 font-extrabold text-xs sm:text-sm shadow-lg shadow-emerald-500/25 transition active:scale-95">
+          🚀 Masuk & Duduk di Meja Sekarang
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- =========================================================================
+       MODAL 0B: 1-CLICK INVITE LINK LOBBY (TANPA INPUT KODE MANUAL)
+       ========================================================================= -->
+  <div id="lobbyModal" class="fixed inset-0 bg-black/85 backdrop-blur-sm z-50 hidden items-center justify-center p-3 sm:p-4">
+    <div class="bg-slate-900 border-2 border-emerald-500/70 rounded-2xl max-w-xl w-full max-h-[92vh] overflow-y-auto p-5 sm:p-6 shadow-2xl text-slate-100">
+      <div class="flex items-center justify-between border-b border-slate-800 pb-3 mb-4">
+        <div class="flex items-center gap-2.5">
+          <div class="w-9 h-9 rounded-xl bg-gradient-to-br from-emerald-500 to-teal-500 text-slate-950 flex items-center justify-center text-lg font-extrabold shadow">🔗</div>
+          <div>
+            <h2 class="text-base sm:text-lg font-extrabold text-white">Undang Teman via Link (1-Klik)</h2>
+            <p class="text-xs text-emerald-300">Tanpa ketik kode! Teman cukup klik link undangan & isi nama untuk langsung masuk meja.</p>
+          </div>
+        </div>
+        <button onclick="GameApp.closeLobbyModal()" class="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300">✕</button>
+      </div>
+
+      <!-- Current Player Identity Bar -->
+      <div class="mb-4 px-3.5 py-2.5 rounded-xl bg-slate-950/90 border border-slate-800 flex items-center justify-between gap-2">
+        <div class="flex items-center gap-2.5">
+          <span id="lobbyMyAvatar" class="text-xl">😎</span>
+          <div>
+            <span class="text-[10px] text-slate-400 block">Nama Panggilan Anda di Meja:</span>
+            <span id="lobbyMyNameDisplay" class="font-extrabold text-sm text-white">Pemain</span>
+          </div>
+        </div>
+        <button onclick="MultiplayerManager.openEditNameModal()"
+          class="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-emerald-300 border border-slate-700 text-[11px] font-bold transition">
+          ✏️ Ubah Nama
+        </button>
+      </div>
+
+      <!-- 1-CLICK INVITE LINK BOX -->
+      <div class="p-4 rounded-2xl bg-gradient-to-br from-emerald-950/80 to-slate-950 border border-emerald-500/50 space-y-3 mb-4 shadow-inner">
+        <div class="flex items-center justify-between">
+          <span class="text-xs font-extrabold text-emerald-300 flex items-center gap-1.5">
+            <span>🔗 Link Undangan Meja Anda</span>
+          </span>
+          <span id="lobbyRoleBadge" class="text-[10px] font-extrabold px-2 py-0.5 rounded bg-amber-400 text-slate-950">👑 HOST MEJA</span>
+        </div>
+
+        <!-- Read-only Invite Link Preview -->
+        <div class="flex items-center gap-2 bg-slate-950 border border-emerald-700/60 rounded-xl px-3 py-2">
+          <input id="inviteLinkReadonlyInput" type="text" readonly
+            value="Membuat link undangan..."
+            onclick="this.select()"
+            class="w-full bg-transparent text-xs font-mono-num text-emerald-200 outline-none select-all truncate" />
+        </div>
+
+        <!-- 1-Click Share Action Buttons -->
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+          <button id="copyInviteLinkBtn" onclick="MultiplayerManager.copyInviteLinkOneClick()"
+            class="w-full py-2.5 px-3 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-extrabold text-xs flex items-center justify-center gap-1.5 shadow-lg shadow-emerald-500/20 transition active:scale-95">
+            <span>📋 Salin Link Undangan (1-Klik)</span>
+          </button>
+
+          <button onclick="MultiplayerManager.shareToWhatsApp()"
+            class="w-full py-2.5 px-3 rounded-xl bg-green-600 hover:bg-green-500 text-white font-extrabold text-xs flex items-center justify-center gap-1.5 shadow-lg shadow-green-600/20 transition active:scale-95">
+            <span>📲 Kirim ke WhatsApp</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- 4 SEATS REAL-TIME STATUS -->
+      <div class="mb-4">
+        <div class="flex items-center justify-between mb-2">
+          <span class="text-xs font-bold text-slate-300">Kursi Meja Saat Ini (4 Pemain):</span>
+          <span class="text-[11px] text-emerald-400">Kursi kosong otomatis diisi Bot CPU</span>
+        </div>
+        <div id="lobbySeatsList" class="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+          <!-- Populated dynamically -->
+        </div>
+      </div>
+
+      <!-- Lobby Footer Actions -->
+      <div class="flex flex-wrap items-center justify-between gap-2 pt-3 border-t border-slate-800">
+        <div class="flex items-center gap-1.5">
+          <button id="lobbyLeaveBtn" onclick="MultiplayerManager.leaveRoom()"
+            class="px-3 py-2 rounded-xl bg-red-950/80 hover:bg-red-900 text-red-200 border border-red-600/50 text-xs font-bold transition">
+            Putuskan Link (Mode Solo)
+          </button>
+          <button onclick="MultiplayerManager.simulateFriendOpeningLink()" title="Simulasikan tampilan saat teman Anda membuka link undangan (Wajib Isi Nama)"
+            class="px-2.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-cyan-300 border border-cyan-500/40 text-[11px] font-bold transition">
+            🧪 Tes Tampilan Tamu Klik Link
+          </button>
+        </div>
+
+        <div class="flex items-center gap-2">
+          <button onclick="GameApp.closeLobbyModal()"
+            class="px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold">
+            Kembali ke Meja
+          </button>
+          <button id="lobbyHostStartBtn" onclick="MultiplayerManager.hostStartMatch()"
+            class="px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-extrabold text-xs shadow-lg shadow-amber-500/25 transition active:scale-95">
+            🚀 Mulai / Bagi Ulang Kartu
+          </button>
+        </div>
+      </div>
+
+      <!-- Status / Feedback Message Bar -->
+      <div id="lobbyStatusToast" class="mt-4 px-3 py-2 rounded-xl bg-slate-950 border border-emerald-600/50 text-xs text-emerald-200 flex items-center gap-2">
+        <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse shrink-0"></span>
+        <span id="lobbyStatusText">Bagikan link di atas ke teman Anda. Begitu mereka klik & isi nama, kursi otomatis terisi!</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- =========================================================================
+       MODAL 1: FLEXIBLE ACE PLACEMENT CHOOSER (Kiri Angka 2 vs Kanan King)
+       ========================================================================= -->
+  <div id="aceChoiceModal" class="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 hidden items-center justify-center p-4">
+    <div class="bg-slate-900 border-2 border-amber-400 rounded-2xl max-w-md w-full p-5 shadow-2xl text-slate-100">
+      <div class="flex items-center justify-between border-b border-slate-800 pb-3 mb-3">
+        <h3 class="text-base sm:text-lg font-extrabold text-white flex items-center gap-2">
+          <span id="aceModalCardBadge" class="px-2 py-0.5 rounded bg-white text-slate-900 font-mono-num">A♠</span>
+          <span>Pilih Arah Penutup Kartu As Pertama</span>
+        </h3>
+        <button onclick="GameApp.closeAceChoiceModal()" class="p-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300">✕</button>
+      </div>
+
+      <p class="text-xs text-slate-300 leading-relaxed mb-4">
+        Ini adalah <strong>Kartu As pertama</strong> yang keluar di meja. Pilihan Anda di sini akan <strong>mengunci arah seluruh Kartu As berikutnya</strong> di semua bunga:
+      </p>
+
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <button onclick="GameApp.confirmAcePlacement('left')"
+          class="p-3.5 rounded-xl bg-cyan-950/80 hover:bg-cyan-900 border-2 border-cyan-400/70 text-left transition flex flex-col justify-between group">
+          <div>
+            <div class="font-extrabold text-sm text-cyan-200 flex items-center justify-between">
+              <span>◀ Tutup Kiri Angka 2</span>
+              <span class="font-mono-num text-xs px-1.5 py-0.5 rounded bg-cyan-400 text-slate-950">1 Poin</span>
+            </div>
+            <p class="text-[11px] text-cyan-100/80 mt-1.5 leading-relaxed">
+              Mengunci jalur bunga ini & mewajibkan <strong>semua As berikutnya keluar di Kiri Angka 2</strong>. As yang mati dihitung <strong>1 Poin</strong>.
+            </p>
+          </div>
+          <div class="mt-3 text-[11px] font-bold text-cyan-300 group-hover:translate-x-0.5 transition">
+            Kunci Semua As di Kiri 2 →
+          </div>
+        </button>
+
+        <button onclick="GameApp.confirmAcePlacement('right')"
+          class="p-3.5 rounded-xl bg-purple-950/80 hover:bg-purple-900 border-2 border-purple-400/70 text-left transition flex flex-col justify-between group">
+          <div>
+            <div class="font-extrabold text-sm text-purple-200 flex items-center justify-between">
+              <span>Tutup Kanan King ▶</span>
+              <span class="font-mono-num text-xs px-1.5 py-0.5 rounded bg-purple-400 text-slate-950">15 Poin</span>
+            </div>
+            <p class="text-[11px] text-purple-100/80 mt-1.5 leading-relaxed">
+              Mengunci jalur bunga ini & mewajibkan <strong>semua As berikutnya keluar di Kanan King</strong>. As yang mati dihitung <strong>15 Poin</strong>!
+            </p>
+          </div>
+          <div class="mt-3 text-[11px] font-bold text-purple-300 group-hover:translate-x-0.5 transition">
+            Kunci Semua As di Kanan K →
+          </div>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- =========================================================================
+       MODAL 2: RULES GUIDE & AI / SCORING CONFIGURATION
+       ========================================================================= -->
+  <div id="rulesModal" class="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 hidden items-center justify-center p-4">
+    <div class="bg-slate-900 border border-emerald-700/70 rounded-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto shadow-2xl text-slate-100 p-5 sm:p-6">
+      <div class="flex items-center justify-between border-b border-slate-800 pb-3 mb-4">
+        <div>
+          <h2 class="text-lg sm:text-xl font-extrabold text-white">📜 Panduan Aturan & Perhitungan Poin</h2>
+          <p class="text-xs text-emerald-400 mt-0.5">Ringkasan aturan resmi yang aktif di meja ini</p>
+        </div>
+        <button onclick="GameApp.closeRulesModal()" class="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300">✕</button>
+      </div>
+
+      <div class="space-y-3 text-xs leading-relaxed text-slate-300">
+        <div class="p-3 rounded-xl bg-slate-800/70 border border-slate-700">
+          <div class="font-bold text-white text-sm mb-1">1. Pembagian Kartu & Pembuka Wajib 7♠</div>
+          <p>52 kartu dibagi rata kepada <strong>4 pemain</strong> (masing-masing 13 kartu). Pemain yang memegang <strong>7♠ (7 Spades)</strong> wajib memulai giliran pertama dengan mengeluarkan 7♠ ke meja. Pemain <strong>tidak boleh Pass/mematikan kartu</strong> selama masih memegang kartu yang valid untuk dimainkan (termasuk jika masih memegang <strong>7♥, 7♦, atau 7♣</strong>).</p>
+        </div>
+
+        <div class="p-3 rounded-xl bg-slate-800/70 border border-slate-700">
+          <div class="font-bold text-amber-300 text-sm mb-1">2. Aturan Pass = Wajib Matikan 1 Kartu (Tutup Kartu)</div>
+          <p>Jika pada giliran Anda tidak ada satu pun kartu di tangan yang bisa menyambung di meja, Anda <strong>wajib memilih 1 kartu dari tangan untuk dimatikan (ditutup)</strong>. Kartu yang sudah dimatikan tidak bisa dimainkan lagi sampai permainan berakhir.</p>
+        </div>
+
+        <div class="p-3 rounded-xl bg-slate-800/70 border border-slate-700">
+          <div class="font-bold text-cyan-300 text-sm mb-1">3. Aturan Kartu As (Mengikuti Arah As Pertama & Mematikan Jalur)</div>
+          <p>Kartu <strong>As (A)</strong> pertama yang keluar di meja dapat diletakkan sebagai penutup di <strong>sebelah kiri angka 2 (`A◀`)</strong> atau di <strong>sebelah kanan King (`▶A`)</strong>. Begitu As pertama keluar:</p>
+          <ul class="list-disc list-inside mt-1 space-y-0.5 text-slate-200">
+            <li>Jika As pertama menutup di <strong>Kiri Angka 2</strong>, maka <strong>semua kartu As berikutnya wajib keluar di Kiri Angka 2</strong>.</li>
+            <li>Jika As pertama menutup di <strong>Kanan King</strong>, maka <strong>semua kartu As berikutnya wajib keluar di Kanan King</strong>.</li>
+            <li>Setiap kali kartu As diletakkan pada suatu bunga, <strong>jalur bunga tersebut langsung MATI / TERKUNCI (`🔒 MATI`)</strong> dan sisa kartu dari bunga yang sama tidak dapat dimainkan lagi.</li>
+          </ul>
+        </div>
+
+        <div class="p-3 rounded-xl bg-slate-800/70 border border-slate-700">
+          <div class="font-bold text-emerald-300 text-sm mb-1">4. Perhitungan Poin Kartu Mati (Penentuan Menang & Kalah)</div>
+          <ul class="list-disc list-inside space-y-1 mt-1">
+            <li><strong>Kartu 2 s/d 10</strong>: Dihitung sesuai angka (2 = 2 poin, ..., 10 = 10 poin).</li>
+            <li><strong>Jack (J) = 11 poin</strong>, <strong>Queen (Q) = 12 poin</strong>, <strong>King (K) = 13 poin</strong>.</li>
+            <li><strong>Kartu As (A) — Mengikuti Posisi As di Meja</strong>:
+              <ul class="list-disc list-inside ml-4 mt-0.5 text-amber-200">
+                <li>Jika As menutup jalur di <strong>sebelah kiri angka 2</strong> ➔ As yang mati dihitung <strong>1 Poin</strong>.</li>
+                <li>Jika As menutup jalur di <strong>sebelah kanan King</strong> ➔ As yang mati dihitung <strong>15 Poin</strong>.</li>
+                <li>Jika <strong>sama sekali tidak ada As yang keluar</strong> (keempat As mati semua) ➔ setiap As yang mati dihitung <strong>25 Poin</strong>.</li>
+              </ul>
+            </li>
+            <li><strong>Pemenang & Yang Kalah</strong>: Semua poin kartu mati dijumlahkan. Pemain dengan <strong>jumlah poin paling banyak adalah yang KALAH</strong>, sedangkan pemain dengan poin paling sedikit adalah Pemenang.</li>
+          </ul>
+        </div>
+
+        <!-- Settings Form inside Modal -->
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2 border-t border-slate-800">
+          <div class="bg-slate-800/90 p-3 rounded-xl border border-slate-700">
+            <label class="block text-xs font-bold text-white mb-1">Tingkat Kecerdasan Bot AI</label>
+            <select id="cfgCpuDifficulty" onchange="GameApp.updateQuickSettings()" class="w-full bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs font-semibold text-white">
+              <option value="easy">Easy (Santai)</option>
+              <option value="medium">Medium (Taktis)</option>
+              <option value="hard" selected>Hard (Strategi Penuh & Jebakan Kunci As)</option>
+            </select>
+          </div>
+
+          <div class="bg-slate-800/90 p-3 rounded-xl border border-slate-700">
+            <label class="block text-xs font-bold text-white mb-1">Kecepatan Giliran Bot</label>
+            <select id="cfgCpuSpeed" onchange="GameApp.updateQuickSettings()" class="w-full bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs font-semibold text-white">
+              <option value="650" selected>Normal (0.65 dtk)</option>
+              <option value="320">Cepat (0.32 dtk)</option>
+              <option value="150">Kilat (0.15 dtk)</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+      <div class="mt-5 pt-3 border-t border-slate-800 flex justify-end">
+        <button onclick="GameApp.closeRulesModal()" class="px-5 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-extrabold text-xs">
+          Mengerti & Kembali ke Meja
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- =========================================================================
+       MODAL 4: END OF GAME SCORE BREAKDOWN & BURIED CARDS REVEAL
+       ========================================================================= -->
+  <div id="resultModal" class="fixed inset-0 bg-black/85 backdrop-blur-sm z-50 hidden items-center justify-center p-3 sm:p-4">
+    <div class="bg-slate-900 border-2 border-amber-500/60 rounded-2xl max-w-2xl w-full max-h-[92vh] overflow-y-auto p-5 sm:p-6 shadow-2xl text-slate-100">
+      <div class="text-center mb-4">
+        <div id="resultTrophyEmoji" class="text-4xl mb-1">🏆</div>
+        <h2 id="resultTitleText" class="text-xl font-extrabold text-white">Permainan Selesai!</h2>
+        <p id="resultSubtitleText" class="text-xs text-emerald-300 mt-1"></p>
+        <div id="resultAceRuleSummary" class="inline-block mt-2 text-[11px] font-mono-num font-bold px-3 py-1 rounded-full bg-amber-500/15 border border-amber-400/40 text-amber-300">
+        </div>
+      </div>
+
+      <!-- Detailed Player Breakdown List -->
+      <div id="resultStandingsList" class="space-y-3 my-4">
+        <!-- Populated dynamically with each player's buried cards and point sum -->
+      </div>
+
+      <div class="flex items-center gap-2.5 mt-5 pt-3 border-t border-slate-800">
+        <button onclick="GameApp.closeResultModal()" class="flex-1 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold text-xs border border-slate-700">
+          Lihat Papan Meja
+        </button>
+        <button id="resultPlayAgainBtn" onclick="GameApp.requestNewGame()" class="flex-1 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-extrabold text-xs shadow-lg shadow-amber-500/25">
+          Main Ronde Baru
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- =========================================================================
+       GAME ENGINE, PEERJS MULTIPLAYER & MODULAR LOGIC
+       ========================================================================= -->
+  <script>
+    /**
+     * =========================================================================
+     * MODULE 1: CARD & BOARD CONSTANTS
+     * Urutan Bunga: 1. Sekop (♠), 2. Hati (♥), 3. Keriting (♣), 4. Wajik (♦)
+     * =========================================================================
+     */
+    const SUITS = [
+      { id: 'spades',   symbol: '♠', name: 'Sekop',    colorClass: 'text-slate-900', badgeBg: 'bg-slate-900 text-white border border-slate-700' },
+      { id: 'hearts',   symbol: '♥', name: 'Hati',     colorClass: 'text-red-600',   badgeBg: 'bg-red-600 text-white border border-red-500' },
+      { id: 'clubs',    symbol: '♣', name: 'Keriting', colorClass: 'text-slate-900', badgeBg: 'bg-slate-900 text-white border border-slate-700' },
+      { id: 'diamonds', symbol: '♦', name: 'Wajik',    colorClass: 'text-red-600',   badgeBg: 'bg-red-600 text-white border border-red-500' }
+    ];
+
+    // 14 visual columns on the board: 'ace_left', 2..13, 'ace_right'
+    const BOARD_COLUMNS = ['ace_left', 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 'ace_right'];
+
+    const RANK_LABELS = {
+      1: 'A', 2: '2', 3: '3', 4: '4', 5: '5', 6: '6', 7: '7',
+      8: '8', 9: '9', 10: '10', 11: 'J', 12: 'Q', 13: 'K'
+    };
+
+    function formatCardLabel(suitId, rank) {
+      const suitObj = SUITS.find(s => s.id === suitId);
+      return `${RANK_LABELS[rank]}${suitObj ? suitObj.symbol : ''}`;
+    }
+
+    /**
+     * =========================================================================
+     * MODULE 2: SEVENS TUTUP KARTU RULE ENGINE (7♠ Start, Ace Lock, 6-8 Golden Rule)
+     * =========================================================================
+     */
+    const RuleEngine = {
+      /**
+       * Creates the 4-suit board state and tracks globalAceSide.
+       * - globalAceSide: null | 'left' | 'right' (Once the 1st Ace is played, all other Aces MUST follow that side)
+       * - Each suit tracks:
+       *    - slots: { 2..13: null | { playedBy }, ace_left: null | { playedBy }, ace_right: null | { playedBy } }
+       *    - lockedByAce: null | 'left' | 'right'
+       *    - lockedByPlayer: null | number
+       */
+      createEmptyBoard() {
+        const board = {
+          globalAceSide: null
+        };
+        SUITS.forEach(s => {
+          const slots = { ace_left: null, ace_right: null };
+          for (let r = 2; r <= 13; r++) {
+            slots[r] = null;
+          }
+          board[s.id] = {
+            slots,
+            lockedByAce: null,
+            lockedByPlayer: null
+          };
+        });
+        return board;
+      },
+
+      /**
+       * Checks whether a specific card `{ suit, rank }` can be played onto the board,
+       * and returns its valid target placement(s):
+       * - For ranks 2..13: returns `['rank']` or `[]`
+       * - For Ace (rank 1): respects `board.globalAceSide`!
+       *   If `board.globalAceSide === null` (no Ace played yet), returns `['left']`, `['right']`, or `['left', 'right']`.
+       *   If `board.globalAceSide === 'left'`, can ONLY return `['left']` (if 2 is out).
+       *   If `board.globalAceSide === 'right'`, can ONLY return `['right']` (if K is out).
+       */
+      getValidPlacementsForCard(board, card, isVeryFirstTurnOfMatch) {
+        const suitRow = board[card.suit];
+        if (!suitRow) return [];
+
+        // RULE: If an Ace has already been played on either side of this suit,
+        // the entire suit row is DEAD / LOCKED! No cards of this suit can be played.
+        if (suitRow.lockedByAce !== null) {
+          return [];
+        }
+
+        // RULE 1: Very first turn of the game MUST be 7♠ (7 Spades)
+        if (isVeryFirstTurnOfMatch) {
+          if (card.suit === 'spades' && card.rank === 7) {
+            return ['7'];
+          }
+          return [];
+        }
+
+        // RULE 2: Any 7 (7♥, 7♦, 7♣) is always valid if not yet on the board
+        if (card.rank === 7) {
+          return suitRow.slots[7] === null ? ['7'] : [];
+        }
+
+        // Other cards require the suit's 7 to be on the board first
+        if (suitRow.slots[7] === null) {
+          return [];
+        }
+
+        // RULE 3: Ace (rank === 1) closes the suit, following globalAceSide if already established
+        if (card.rank === 1) {
+          const placements = [];
+          const canLeft = suitRow.slots[2] !== null && suitRow.slots.ace_left === null;
+          const canRight = suitRow.slots[13] !== null && suitRow.slots.ace_right === null;
+
+          if (board.globalAceSide === 'left') {
+            if (canLeft) placements.push('left');
+          } else if (board.globalAceSide === 'right') {
+            if (canRight) placements.push('right');
+          } else {
+            if (canLeft) placements.push('left');
+            if (canRight) placements.push('right');
+          }
+          return placements;
+        }
+
+        // RULE 4: Ranks 2..6 require (rank + 1) to be on the board
+        if (card.rank >= 2 && card.rank <= 6) {
+          if (suitRow.slots[card.rank] === null && suitRow.slots[card.rank + 1] !== null) {
+            return [String(card.rank)];
+          }
+          return [];
+        }
+
+        // RULE 5: Ranks 8..13 require (rank - 1) to be on the board
+        if (card.rank >= 8 && card.rank <= 13) {
+          if (suitRow.slots[card.rank] === null && suitRow.slots[card.rank - 1] !== null) {
+            return [String(card.rank)];
+          }
+          return [];
+        }
+
+        return [];
+      },
+
+      /**
+       * Returns all cards in `hand` that have at least one legal placement on `board`.
+       */
+      getPlayableCards(hand, board, isVeryFirstTurnOfMatch) {
+        const result = [];
+        hand.forEach(card => {
+          const placements = this.getValidPlacementsForCard(board, card, isVeryFirstTurnOfMatch);
+          if (placements.length > 0) {
+            result.push({
+              suit: card.suit,
+              rank: card.rank,
+              placements
+            });
+          }
+        });
+        return result;
+      },
+
+      /**
+       * Checks if a card is a Golden Rule forbidden card (Rank 6 or Rank 8).
+       */
+      isGoldenRuleCard(rank) {
+        return rank === 6 || rank === 8;
+      },
+
+      /**
+       * Computes the current dynamic penalty value for any buried Ace (Kartu As yang mati)
+       * based on `board.globalAceSide`:
+       * - If `board.globalAceSide === null` (no Ace played at all) -> 25 Points
+       * - If `board.globalAceSide === 'right'` (Aces locked to Right of King) -> 15 Points
+       * - If `board.globalAceSide === 'left'` (Aces locked to Left of 2) -> 1 Point
+       */
+      getBuriedAcePointValue(board) {
+        if (board.globalAceSide === 'left') {
+          return {
+            points: 1,
+            reason: 'As dikunci di Kiri Angka 2 (Semua As Mati = 1 Poin)'
+          };
+        }
+        if (board.globalAceSide === 'right') {
+          return {
+            points: 15,
+            reason: 'As dikunci di Kanan King (Semua As Mati = 15 Poin)'
+          };
+        }
+        return {
+          points: 25,
+          reason: 'Belum ada As keluar di meja (Semua As Mati = 25 Poin)'
+        };
+      },
+
+      /**
+       * Calculates the penalty points of a single buried card.
+       */
+      getCardPenaltyPoints(card, board) {
+        if (card.rank === 1) {
+          return this.getBuriedAcePointValue(board).points;
+        }
+        // Cards 2..10 = face value, J=11, Q=12, K=13
+        return card.rank;
+      },
+
+      /**
+       * Calculates total penalty points and per-card breakdown for a player's buried cards.
+       */
+      calculatePlayerScore(player, board) {
+        let totalPoints = 0;
+        const cardBreakdown = player.buriedCards.map(c => {
+          const pts = this.getCardPenaltyPoints(c, board);
+          totalPoints += pts;
+          return {
+            ...c,
+            points: pts
+          };
+        });
+        return {
+          totalPoints,
+          buriedCount: player.buriedCards.length,
+          violatedGoldenRule: Boolean(player.violatedGoldenRule),
+          violatedCard: player.violatedCard || null,
+          violationDetail: player.violationDetail || null,
+          cardBreakdown
+        };
+      }
+    };
+
+    /**
+     * =========================================================================
+     * MODULE 3: SMART BOT AI & HINT ENGINE
+     * =========================================================================
+     */
+    const BotAI = {
+      /**
+       * Decides the best move when the player has 1 or more playable cards.
+       * Returns: { card, placement: 'left'|'right'|'rank', reason }
+       */
+      chooseBestPlay(player, board, isVeryFirstTurn, difficulty = 'hard') {
+        const playableList = RuleEngine.getPlayableCards(player.hand, board, isVeryFirstTurn);
+        if (playableList.length === 0) return null;
+
+        if (difficulty === 'easy') {
+          const pick = playableList[Math.floor(Math.random() * playableList.length)];
+          return {
+            card: { suit: pick.suit, rank: pick.rank },
+            placement: pick.placements[0],
+            reason: 'Langkah valid acak'
+          };
+        }
+
+        // Expand each playable option (including 'left' vs 'right' for the very first Ace)
+        const candidates = [];
+        playableList.forEach(item => {
+          item.placements.forEach(placement => {
+            candidates.push({
+              suit: item.suit,
+              rank: item.rank,
+              placement
+            });
+          });
+        });
+
+        const scored = candidates.map(cand => {
+          let score = 0;
+          let reasons = [];
+          const sameSuitInHand = player.hand.filter(c => c.suit === cand.suit && c.rank !== cand.rank);
+          const suitRow = board[cand.suit];
+
+          // 1. Prioritize playing 6 or 8 so we don't get trapped if an opponent locks this suit with an Ace
+          if (cand.rank === 6 || cand.rank === 8) {
+            score += 95;
+            reasons.push(`Segera keluarkan ${formatCardLabel(cand.suit, cand.rank)} agar aman dari penutupan jalur`);
+          }
+
+          // 2. Playing a 7 (7♥, 7♦, 7♣)
+          if (cand.rank === 7) {
+            const holdsSixOrEight = sameSuitInHand.some(c => c.rank === 6 || c.rank === 8);
+            if (holdsSixOrEight) {
+              score += 80;
+              reasons.push(`Buka ${formatCardLabel(cand.suit, 7)} untuk membuka jalur kartu bunga ini`);
+            } else if (sameSuitInHand.length >= 3) {
+              score += 30;
+              reasons.push(`Buka ${formatCardLabel(cand.suit, 7)} karena Anda memegang banyak kartu ${cand.suit}`);
+            } else {
+              score -= 20;
+              reasons.push(`Tahan ${formatCardLabel(cand.suit, 7)} selama masih ada jalan lain`);
+            }
+          }
+
+          // 3. Playing an Ace (CLOSING / LOCKING THE SUIT!)
+          if (cand.rank === 1) {
+            const ownRemainingInSuit = sameSuitInHand.length;
+            const ownSixOrEightInSuit = sameSuitInHand.some(c => c.rank === 6 || c.rank === 8);
+            const sixStillUnplayedOnBoard = suitRow.slots[6] === null;
+            const eightStillUnplayedOnBoard = suitRow.slots[8] === null;
+
+            if (ownSixOrEightInSuit) {
+              // NEVER lock a suit with an Ace if we ourselves still hold 6 or 8 of that suit!
+              score -= 500;
+              reasons.push(`Hindari menutup jalur ${cand.suit} dulu karena Anda masih memegang kartu di sisi seberang`);
+            } else if (sixStillUnplayedOnBoard || eightStillUnplayedOnBoard) {
+              // INSTANT WIN TRAP: 6 or 8 of this suit is NOT on the board and NOT in our hand -> An opponent holds it!
+              // Closing this suit with Ace immediately makes that opponent LOSE!
+              score += 350;
+              const trappedRank = sixStillUnplayedOnBoard ? 6 : 8;
+              reasons.push(`Kunci jalur ${cand.suit} dengan As sekarang untuk menjebak pemegang kartu ${formatCardLabel(cand.suit, trappedRank)}!`);
+            } else if (ownRemainingInSuit === 0) {
+              score += 90;
+              reasons.push(`Kunci jalur ${cand.suit} dengan As untuk mematikan sisa kartu lawan!`);
+            } else {
+              const ownLockedPts = sameSuitInHand.reduce((sum, c) => sum + c.rank, 0);
+              score += (35 - ownLockedPts * 3);
+              reasons.push(`Menutup jalur ${cand.suit} dengan As`);
+            }
+
+            // Choosing Left (1pt) vs Right (15pt) if this is the very first Ace
+            const holdsOtherAces = player.hand.some(c => c.rank === 1 && c.suit !== cand.suit);
+            if (cand.placement === 'left') {
+              if (holdsOtherAces) {
+                score += 18;
+                reasons.push(`Tutup di Kiri Angka 2 agar semua As berikutnya dikunci di Kiri (1 Poin)`);
+              } else {
+                score += 4;
+              }
+            } else if (cand.placement === 'right') {
+              if (!holdsOtherAces) {
+                score += 18;
+                reasons.push(`Tutup di Kanan King agar semua As dikunci di Kanan (15 Poin)!`);
+              }
+            }
+          }
+
+          // 4. Normal progression cards (2..5 and 9..13)
+          if (cand.rank >= 2 && cand.rank <= 5) {
+            const ownLower = sameSuitInHand.filter(c => c.rank < cand.rank || c.rank === 1);
+            score += ownLower.length * 18 + cand.rank * 2;
+            if (ownLower.length > 0) {
+              reasons.push(`Membuka jalan menuju kartu bawah ${cand.suit} milik Anda`);
+            } else {
+              score -= 15;
+            }
+          } else if (cand.rank >= 9 && cand.rank <= 13) {
+            const ownHigher = sameSuitInHand.filter(c => c.rank > cand.rank || c.rank === 1);
+            score += ownHigher.length * 18 + cand.rank * 2;
+            if (ownHigher.length > 0) {
+              reasons.push(`Membuka jalan menuju kartu atas ${cand.suit} milik Anda`);
+            } else {
+              score -= 15;
+            }
+          }
+
+          return {
+            card: { suit: cand.suit, rank: cand.rank },
+            placement: cand.placement,
+            score,
+            reason: reasons[0] || `Mainkan ${formatCardLabel(cand.suit, cand.rank)}`
+          };
+        });
+
+        scored.sort((a, b) => b.score - a.score);
+        return scored[0];
+      },
+
+      /**
+       * Decides which card to BURY ("Matikan Kartu") when the player has NO playable moves.
+       */
+      chooseBestBury(player, board, difficulty = 'hard') {
+        const hand = player.hand;
+        if (hand.length === 0) return null;
+
+        // Filter out Golden Rule cards (6 & 8) first so bots don't accidentally self-destruct if they have another card
+        const safeCards = hand.filter(c => !RuleEngine.isGoldenRuleCard(c.rank));
+
+        if (safeCards.length === 0) {
+          const trappedCard = hand[0];
+          return {
+            card: trappedCard,
+            isTrappedGoldenRule: true,
+            reason: `Hanya tersisa kartu ${formatCardLabel(trappedCard.suit, trappedCard.rank)} di tangan.`
+          };
+        }
+
+        if (difficulty === 'easy') {
+          const pick = safeCards[Math.floor(Math.random() * safeCards.length)];
+          return {
+            card: pick,
+            isTrappedGoldenRule: false,
+            reason: `Matikan ${formatCardLabel(pick.suit, pick.rank)}`
+          };
+        }
+
+        // Score each safe card for burying (Higher buryScore = better to bury now)
+        const evaluated = safeCards.map(card => {
+          let buryScore = 0;
+          let reasons = [];
+          const suitRow = board[card.suit];
+          const cardPts = RuleEngine.getCardPenaltyPoints(card, board);
+
+          // Also check if an Ace can never be played on its locked global side (e.g. if suit is locked)
+          if (suitRow.lockedByAce !== null) {
+            buryScore += 100 - cardPts * 2;
+            reasons.push(`Jalur ${card.suit} sudah ditutup As & bernilai ${cardPts} poin`);
+          } else {
+            const distFromSeven = card.rank === 1 ? 6 : Math.abs(card.rank - 7);
+            buryScore += (20 - cardPts * 2.2) + distFromSeven * 3;
+            reasons.push(`Matikan kartu bernilai rendah (${cardPts} poin) dan jauh dari tengah`);
+          }
+
+          if (card.rank === 1 && suitRow.lockedByAce === null) {
+            buryScore -= 45;
+          }
+
+          return {
+            card,
+            isTrappedGoldenRule: false,
+            buryScore,
+            reason: reasons[0] || `Matikan ${formatCardLabel(card.suit, card.rank)} (${cardPts} poin)`
+          };
+        });
+
+        evaluated.sort((a, b) => b.buryScore - a.buryScore);
+        return evaluated[0];
+      }
+    };
+
+    /**
+     * =========================================================================
+     * MODULE 4: WEB AUDIO SYNTHESIZER
+     * =========================================================================
+     */
+    const SoundEngine = {
+      enabled: true,
+      ctx: null,
+
+      init() {
+        if (!this.ctx) {
+          const AudioCtx = window.AudioContext || window.webkitAudioContext;
+          if (AudioCtx) this.ctx = new AudioCtx();
+        }
+        if (this.ctx && this.ctx.state === 'suspended') {
+          this.ctx.resume();
+        }
+      },
+
+      playCardSnap() {
+        if (!this.enabled) return;
+        try {
+          this.init();
+          const now = this.ctx.currentTime;
+          const osc = this.ctx.createOscillator();
+          const gain = this.ctx.createGain();
+          osc.type = 'triangle';
+          osc.frequency.setValueAtTime(340, now);
+          osc.frequency.exponentialRampToValueAtTime(120, now + 0.065);
+          gain.gain.setValueAtTime(0.18, now);
+          gain.gain.exponentialRampToValueAtTime(0.001, now + 0.065);
+          osc.connect(gain);
+          gain.connect(this.ctx.destination);
+          osc.start(now);
+          osc.stop(now + 0.07);
+        } catch (e) {}
+      },
+
+      playBuryCard() {
+        if (!this.enabled) return;
+        try {
+          this.init();
+          const now = this.ctx.currentTime;
+          const osc = this.ctx.createOscillator();
+          const gain = this.ctx.createGain();
+          osc.type = 'sine';
+          osc.frequency.setValueAtTime(170, now);
+          osc.frequency.exponentialRampToValueAtTime(65, now + 0.14);
+          gain.gain.setValueAtTime(0.22, now);
+          gain.gain.exponentialRampToValueAtTime(0.001, now + 0.14);
+          osc.connect(gain);
+          gain.connect(this.ctx.destination);
+          osc.start(now);
+          osc.stop(now + 0.15);
+        } catch (e) {}
+      },
+
+      playSuitLock() {
+        if (!this.enabled) return;
+        try {
+          this.init();
+          const notes = [440, 330, 220];
+          notes.forEach((freq, idx) => {
+            const now = this.ctx.currentTime + idx * 0.06;
+            const osc = this.ctx.createOscillator();
+            const gain = this.ctx.createGain();
+            osc.type = 'sawtooth';
+            osc.frequency.setValueAtTime(freq, now);
+            gain.gain.setValueAtTime(0.12, now);
+            gain.gain.exponentialRampToValueAtTime(0.001, now + 0.12);
+            osc.connect(gain);
+            gain.connect(this.ctx.destination);
+            osc.start(now);
+            osc.stop(now + 0.13);
+          });
+        } catch (e) {}
+      },
+
+      playGoldenRuleAlarm() {
+        if (!this.enabled) return;
+        try {
+          this.init();
+          const notes = [300, 210, 145];
+          notes.forEach((freq, idx) => {
+            const now = this.ctx.currentTime + idx * 0.12;
+            const osc = this.ctx.createOscillator();
+            const gain = this.ctx.createGain();
+            osc.type = 'sawtooth';
+            osc.frequency.setValueAtTime(freq, now);
+            gain.gain.setValueAtTime(0.2, now);
+            gain.gain.exponentialRampToValueAtTime(0.001, now + 0.22);
+            osc.connect(gain);
+            gain.connect(this.ctx.destination);
+            osc.start(now);
+            osc.stop(now + 0.24);
+          });
+        } catch (e) {}
+      },
+
+      playWinChime() {
+        if (!this.enabled) return;
+        try {
+          this.init();
+          const notes = [523.25, 659.25, 783.99, 1046.5];
+          notes.forEach((freq, idx) => {
+            const now = this.ctx.currentTime + idx * 0.085;
+            const osc = this.ctx.createOscillator();
+            const gain = this.ctx.createGain();
+            osc.type = 'triangle';
+            osc.frequency.setValueAtTime(freq, now);
+            gain.gain.setValueAtTime(0.16, now);
+            gain.gain.exponentialRampToValueAtTime(0.001, now + 0.24);
+            osc.connect(gain);
+            gain.connect(this.ctx.destination);
+            osc.start(now);
+            osc.stop(now + 0.25);
+          });
+        } catch (e) {}
+      },
+
+      playChatPop() {
+        if (!this.enabled) return;
+        try {
+          this.init();
+          const now = this.ctx.currentTime;
+          const osc = this.ctx.createOscillator();
+          const gain = this.ctx.createGain();
+          osc.type = 'sine';
+          osc.frequency.setValueAtTime(520, now);
+          osc.frequency.exponentialRampToValueAtTime(780, now + 0.08);
+          gain.gain.setValueAtTime(0.14, now);
+          gain.gain.exponentialRampToValueAtTime(0.001, now + 0.09);
+          osc.connect(gain);
+          gain.connect(this.ctx.destination);
+          osc.start(now);
+          osc.stop(now + 0.095);
+        } catch (e) {}
+      }
+    };
+
+    /**
+     * =========================================================================
+     * MODULE 4B: 1-CLICK INVITE LINK MULTIPLAYER MANAGER (PEERJS + BROADCASTCHANNEL)
+     * - Mandatory Name Modal before joining from an invite link!
+     * - Zero manual code input: automatic URL creation & auto-join via ?room=XXXX
+     * =========================================================================
+     */
+    const PEER_PREFIX = 'sevens-tutup-';
+    const SEAT_AVATARS = ['😎', '🤠', '🦊', '🐯'];
+    const DEFAULT_BOT_NAMES = ['Bot Raka', 'Bot Nadia', 'Bot Bima', 'Bot Seno'];
+
+    const MultiplayerManager = {
+      mode: 'solo', // 'solo' | 'host' | 'client'
+      peer: null,
+      bcChannel: null, // Local BroadcastChannel fallback for instant multi-tab testing
+      roomCode: null,
+      mySeatIndex: 0,
+      myNickname: '',
+      myAvatar: '😎',
+      hasConfirmedNameInSession: false,
+      pendingInviteRoomCode: null,
+      nameModalContext: 'host_create', // 'invite_join' | 'host_create' | 'edit_name'
+
+      hostConn: null, // Used by Client to talk to Host via PeerJS
+      clientConns: {}, // seatIndex -> DataConnection (Used by Host)
+
+      // 4 Lobby Seats (0..3)
+      seats: [
+        { seatIndex: 0, type: 'human', name: 'Anda',      avatar: '😎', peerId: null, connected: true },
+        { seatIndex: 1, type: 'bot',   name: 'Bot Raka',  avatar: '🤖', peerId: null, connected: false },
+        { seatIndex: 2, type: 'bot',   name: 'Bot Nadia', avatar: '🦊', peerId: null, connected: false },
+        { seatIndex: 3, type: 'bot',   name: 'Bot Bima',  avatar: '🐯', peerId: null, connected: false }
+      ],
+
+      /**
+       * Checks URL for `?room=XXXX` or `#room=XXXX` on page load.
+       * If found, immediately opens the MANDATORY Name Pop-up before letting the guest join!
+       */
+      initFromUrlParams() {
+        const savedName = localStorage.getItem('sevens_mp_nickname');
+        const savedAvatar = localStorage.getItem('sevens_mp_avatar');
+        if (savedName && savedName.trim().length >= 2) {
+          this.myNickname = savedName.trim().slice(0, 16);
+          this.seats[0].name = this.myNickname;
+        }
+        if (savedAvatar) {
+          this.myAvatar = savedAvatar;
+          this.seats[0].avatar = savedAvatar;
+        }
+
+        const inviteCode = this.extractRoomCodeFromLocation();
+        if (inviteCode) {
+          // Player opened an invitation link! They MUST enter/confirm their name before joining.
+          this.pendingInviteRoomCode = inviteCode;
+          this.openMandatoryNameModal('invite_join', inviteCode);
+        }
+      },
+
+      extractRoomCodeFromLocation() {
+        try {
+          const params = new URLSearchParams(window.location.search);
+          const fromQuery = params.get('room');
+          if (fromQuery && fromQuery.trim().length >= 3) {
+            return fromQuery.trim().toUpperCase();
+          }
+          if (window.location.hash && window.location.hash.includes('room=')) {
+            const hashParams = new URLSearchParams(window.location.hash.replace(/^#/, ''));
+            const fromHash = hashParams.get('room');
+            if (fromHash && fromHash.trim().length >= 3) {
+              return fromHash.trim().toUpperCase();
+            }
+          }
+        } catch (e) {}
+        return null;
+      },
+
+      selectAvatar(avatarChar) {
+        this.myAvatar = avatarChar;
+        document.querySelectorAll('.avatar-pick-btn').forEach(btn => {
+          if (btn.getAttribute('data-avatar') === avatarChar) {
+            btn.className = 'avatar-pick-btn w-10 h-10 rounded-xl bg-slate-800 border-2 border-emerald-400 text-lg flex items-center justify-center transition scale-105 shadow';
+          } else {
+            btn.className = 'avatar-pick-btn w-10 h-10 rounded-xl bg-slate-950 border border-slate-700 text-lg flex items-center justify-center transition opacity-75 hover:opacity-100';
+          }
+        });
+      },
+
+      /**
+       * Opens the Mandatory Name Entry Modal.
+       * - context === 'invite_join': Guest clicked an invite link (Cancel button is hidden; name is strictly mandatory!)
+       * - context === 'host_create': Host clicked "🔗 Undang Teman" for the first time
+       * - context === 'edit_name': Player clicked "✏️ Ubah Nama"
+       */
+      openMandatoryNameModal(context = 'host_create', roomCode = null) {
+        this.nameModalContext = context;
+        const modal = document.getElementById('mandatoryNameModal');
+        const iconEl = document.getElementById('nameModalIcon');
+        const tagEl = document.getElementById('nameModalTag');
+        const titleEl = document.getElementById('nameModalTitle');
+        const subEl = document.getElementById('nameModalSubtitle');
+        const inputEl = document.getElementById('mandatoryNameInput');
+        const cancelBtn = document.getElementById('nameModalCancelBtn');
+        const submitBtn = document.getElementById('nameModalSubmitBtn');
+
+        this.clearNameError();
+        this.selectAvatar(this.myAvatar || '😎');
+
+        if (context === 'invite_join') {
+          iconEl.textContent = '🎉';
+          tagEl.textContent = `Undangan Meja #${roomCode || this.pendingInviteRoomCode || 'MABAR'}`;
+          titleEl.textContent = 'Anda Diundang Mabar 7♠ Tutup Kartu!';
+          subEl.innerHTML = 'Teman Anda telah menyiapkan meja permainan. <strong>Wajib masukkan nama panggilan Anda</strong> di bawah ini untuk langsung duduk di kursi meja:';
+          inputEl.value = ''; // Force guest to actively type their name as requested
+          cancelBtn.classList.add('hidden');
+          submitBtn.textContent = '🚀 Gabung ke Meja Sekarang';
+        } else if (context === 'host_create') {
+          iconEl.textContent = '🔗';
+          tagEl.textContent = 'Buat Link Undangan 1-Klik';
+          titleEl.textContent = 'Masukkan Nama Panggilan Anda';
+          subEl.innerHTML = 'Sebelum membagikan <strong>Link Undangan 1-Klik</strong> ke teman, masukkan nama panggilan Anda di meja:';
+          inputEl.value = this.myNickname || '';
+          cancelBtn.classList.remove('hidden');
+          submitBtn.textContent = '🔗 Simpan Nama & Buat Link Undangan';
+        } else {
+          iconEl.textContent = '✏️';
+          tagEl.textContent = 'Profil Pemain';
+          titleEl.textContent = 'Ubah Nama & Avatar Anda';
+          subEl.innerHTML = 'Masukkan nama panggilan baru yang akan dilihat oleh teman semeja Anda:';
+          inputEl.value = this.myNickname || '';
+          cancelBtn.classList.remove('hidden');
+          submitBtn.textContent = '✅ Simpan Perubahan';
+        }
+
+        modal.classList.remove('hidden');
+        modal.classList.add('flex');
+        setTimeout(() => inputEl.focus(), 80);
+      },
+
+      openEditNameModal() {
+        this.openMandatoryNameModal('edit_name');
+      },
+
+      clearNameError() {
+        const errEl = document.getElementById('mandatoryNameError');
+        const inputEl = document.getElementById('mandatoryNameInput');
+        if (errEl) errEl.classList.add('hidden');
+        if (inputEl) {
+          inputEl.classList.remove('border-red-500');
+          inputEl.classList.add('border-slate-700');
+        }
+      },
+
+      cancelNameModal() {
+        if (this.nameModalContext === 'invite_join') {
+          // Cannot cancel if joining via invite link without entering a name
+          return;
+        }
+        const modal = document.getElementById('mandatoryNameModal');
+        modal.classList.add('hidden');
+        modal.classList.remove('flex');
+      },
+
+      /**
+       * Validates that the player entered a real name (>= 2 chars), saves it,
+       * and immediately joins the friend's room or creates the 1-Click Invite Room.
+       */
+      submitMandatoryName() {
+        const inputEl = document.getElementById('mandatoryNameInput');
+        const errEl = document.getElementById('mandatoryNameError');
+        const rawName = (inputEl ? inputEl.value : '').trim();
+
+        if (rawName.length < 2) {
+          if (errEl) errEl.classList.remove('hidden');
+          if (inputEl) {
+            inputEl.classList.remove('border-slate-700');
+            inputEl.classList.add('border-red-500');
+            inputEl.focus();
+          }
+          SoundEngine.playBuryCard();
+          return;
+        }
+
+        const cleanName = rawName.slice(0, 16);
+        this.myNickname = cleanName;
+        this.hasConfirmedNameInSession = true;
+
+        try {
+          localStorage.setItem('sevens_mp_nickname', cleanName);
+          localStorage.setItem('sevens_mp_avatar', this.myAvatar);
+        } catch (e) {}
+
+        // Close Mandatory Name Modal
+        const modal = document.getElementById('mandatoryNameModal');
+        modal.classList.add('hidden');
+        modal.classList.remove('flex');
+
+        // Update local seat identity if already in game
+        const mySeat = GameApp.getLocalSeatIndex();
+        if (this.seats[mySeat]) {
+          this.seats[mySeat].name = cleanName;
+          this.seats[mySeat].avatar = this.myAvatar;
+        }
+        if (GameApp.state && GameApp.state.players && GameApp.state.players[mySeat]) {
+          GameApp.state.players[mySeat].name = cleanName;
+          GameApp.state.players[mySeat].avatar = this.myAvatar;
+        }
+
+        SoundEngine.playCardSnap();
+
+        if (this.nameModalContext === 'invite_join' && this.pendingInviteRoomCode) {
+          const targetCode = this.pendingInviteRoomCode;
+          this.pendingInviteRoomCode = null;
+          GameApp.openLobbyModal();
+          this.autoJoinRoomByLink(targetCode);
+        } else if (this.nameModalContext === 'host_create') {
+          GameApp.openLobbyModal();
+          if (this.mode === 'solo') {
+            this.createRoomAutomatically();
+          }
+        } else {
+          // 'edit_name'
+          if (this.mode === 'host') {
+            this.broadcastLobbyAndState(false);
+          } else if (this.mode === 'client') {
+            this.sendPacketToHost({
+              type: 'UPDATE_IDENTITY',
+              seatIndex: this.mySeatIndex,
+              name: cleanName,
+              avatar: this.myAvatar
+            });
+          }
+          this.renderLobbyUI();
+          GameApp.renderAll();
+        }
+      },
+
+      generateShortCode() {
+        const chars = '23456789ABCDEFGHJKLMNPQRSTUVWXYZ';
+        let code = '';
+        for (let i = 0; i < 5; i++) {
+          code += chars[Math.floor(Math.random() * chars.length)];
+        }
+        return code;
+      },
+
+      getInviteUrl() {
+        const baseUrl = window.location.href.split('?')[0].split('#')[0];
+        return `${baseUrl}?room=${this.roomCode || 'MABAR'}`;
+      },
+
+      setLobbyStatus(msg, tone = 'emerald') {
+        const el = document.getElementById('lobbyStatusText');
+        const box = document.getElementById('lobbyStatusToast');
+        if (el) el.textContent = msg;
+        if (box) {
+          const colors = {
+            emerald: 'border-emerald-600/50 text-emerald-200',
+            amber: 'border-amber-500/60 text-amber-200',
+            red: 'border-red-500/60 text-red-200'
+          };
+          box.className = `mt-4 px-3 py-2 rounded-xl bg-slate-950 border text-xs flex items-center gap-2 ${colors[tone] || colors.emerald}`;
+        }
+      },
+
+      /**
+       * Sets up a local BroadcastChannel for the room code so multiple tabs or simulated guests
+       * can also connect instantaneously alongside PeerJS WebRTC.
+       */
+      setupBroadcastChannel(code) {
+        if (this.bcChannel) {
+          try { this.bcChannel.close(); } catch (e) {}
+          this.bcChannel = null;
+        }
+        if (typeof BroadcastChannel === 'undefined') return;
+
+        try {
+          const bc = new BroadcastChannel(`sevens_room_${code}`);
+          this.bcChannel = bc;
+          bc.onmessage = (ev) => {
+            const data = ev.data;
+            if (!data || !data.type) return;
+
+            if (this.mode === 'host') {
+              if (data.type === 'JOIN_REQUEST') {
+                this.processJoinRequest(data.name, data.avatar, data.clientId, (reply) => {
+                  bc.postMessage({ ...reply, targetClientId: data.clientId });
+                });
+              } else if (data.type === 'CLIENT_PLAY_CARD') {
+                GameApp.executePlayCard(data.seatIndex, data.suit, data.rank, data.placement);
+              } else if (data.type === 'CLIENT_BURY_CARD') {
+                GameApp.executeBuryCard(data.seatIndex, data.suit, data.rank);
+              } else if (data.type === 'QUICK_CHAT') {
+                this.broadcastQuickChat(data.seatIndex, data.text);
+              } else if (data.type === 'UPDATE_IDENTITY') {
+                this.updateSeatIdentity(data.seatIndex, data.name, data.avatar);
+              }
+            } else if (this.mode === 'client') {
+              if (data.targetClientId && data.targetClientId !== this._localClientId) return;
+              this.handleHostPacket(data);
+            }
+          };
+        } catch (e) {}
+      },
+
+      /**
+       * HOST: Automatically creates a room session and generates the 1-Click Invite Link.
+       */
+      createRoomAutomatically() {
+        this.cleanupConnections();
+        const nick = this.myNickname || 'Host';
+        const code = this.generateShortCode();
+        const fullPeerId = `${PEER_PREFIX}${code}`;
+
+        this.mode = 'host';
+        this.roomCode = code;
+        this.mySeatIndex = 0;
+        this.seats = [
+          { seatIndex: 0, type: 'human', name: nick, avatar: this.myAvatar || '😎', peerId: fullPeerId, connected: true },
+          { seatIndex: 1, type: 'bot',   name: DEFAULT_BOT_NAMES[0], avatar: '🤖', peerId: null, connected: false },
+          { seatIndex: 2, type: 'bot',   name: DEFAULT_BOT_NAMES[1], avatar: '🦊', peerId: null, connected: false },
+          { seatIndex: 3, type: 'bot',   name: DEFAULT_BOT_NAMES[2], avatar: '🐯', peerId: null, connected: false }
+        ];
+
+        if (GameApp.state && GameApp.state.players && GameApp.state.players[0]) {
+          GameApp.state.players[0].name = nick;
+          GameApp.state.players[0].avatar = this.myAvatar || '😎';
+        }
+
+        // Update URL query string cleanly without reloading so the user can even copy the browser address bar
+        try {
+          window.history.replaceState({}, '', `?room=${code}`);
+        } catch (e) {}
+
+        this.setupBroadcastChannel(code);
+        this.renderLobbyUI();
+        GameApp.renderAll();
+
+        if (typeof Peer === 'undefined') {
+          this.setLobbyStatus(`Link Undangan siap! Salin link di atas dan kirim ke teman Anda.`, 'emerald');
+          return;
+        }
+
+        this.setLobbyStatus(`Menyiapkan jalur Mabar Online untuk Link Undangan...`, 'amber');
+
+        try {
+          const peer = new Peer(fullPeerId, { debug: 1 });
+          this.peer = peer;
+
+          peer.on('open', () => {
+            this.setLobbyStatus(`🟢 Link Undangan Aktif! Salin link di atas atau klik Kirim ke WhatsApp.`, 'emerald');
+            this.renderLobbyUI();
+            GameApp.renderHeaderStatus();
+          });
+
+          peer.on('connection', (conn) => {
+            this.handleIncomingClientConnection(conn);
+          });
+
+          peer.on('error', (err) => {
+            if (err && err.type === 'unavailable-id') {
+              this.createRoomAutomatically();
+              return;
+            }
+            this.setLobbyStatus(`Link Undangan siap digunakan (Mode Lokal/WebRTC).`, 'emerald');
+          });
+        } catch (e) {
+          this.setLobbyStatus(`Link Undangan siap dibagikan.`, 'emerald');
+        }
+      },
+
+      processJoinRequest(clientName, clientAvatar, peerOrClientId, sendReplyFn) {
+        const cleanName = (clientName || 'Teman').slice(0, 16);
+        const cleanAvatar = clientAvatar || '🤠';
+
+        // Check if this peerId already has a seat
+        let targetSeat = this.seats.findIndex((s, idx) => idx > 0 && s.peerId === peerOrClientId);
+        if (targetSeat === -1) {
+          targetSeat = this.seats.findIndex((s, idx) => idx > 0 && s.type === 'bot');
+        }
+
+        if (targetSeat === -1) {
+          sendReplyFn({ type: 'JOIN_REJECTED', reason: 'Meja sudah penuh (4 pemain manusia).' });
+          return -1;
+        }
+
+        this.seats[targetSeat] = {
+          seatIndex: targetSeat,
+          type: 'human',
+          name: cleanName,
+          avatar: cleanAvatar,
+          peerId: peerOrClientId,
+          connected: true
+        };
+
+        // Hot-join into active match
+        if (GameApp.state && GameApp.state.players && GameApp.state.players[targetSeat]) {
+          GameApp.state.players[targetSeat].name = cleanName;
+          GameApp.state.players[targetSeat].avatar = cleanAvatar;
+          GameApp.state.players[targetSeat].isHuman = true;
+          GameApp.state.actionBannerText = `🎉 ${cleanName} bergabung lewat Link Undangan di Kursi ${targetSeat + 1}!`;
+        }
+
+        sendReplyFn({
+          type: 'JOIN_ACCEPTED',
+          seatIndex: targetSeat,
+          roomCode: this.roomCode,
+          seats: this.seats,
+          state: GameApp.state
+        });
+
+        SoundEngine.playWinChime();
+        this.setLobbyStatus(`🎉 ${cleanName} mengklik Link Undangan & duduk di Kursi ${targetSeat + 1}!`, 'emerald');
+        this.broadcastLobbyAndState(false);
+        this.renderLobbyUI();
+        GameApp.renderAll();
+        return targetSeat;
+      },
+
+      updateSeatIdentity(seatIndex, newName, newAvatar) {
+        if (!this.seats[seatIndex]) return;
+        const cleanName = (newName || 'Pemain').slice(0, 16);
+        this.seats[seatIndex].name = cleanName;
+        if (newAvatar) this.seats[seatIndex].avatar = newAvatar;
+        if (GameApp.state && GameApp.state.players && GameApp.state.players[seatIndex]) {
+          GameApp.state.players[seatIndex].name = cleanName;
+          if (newAvatar) GameApp.state.players[seatIndex].avatar = newAvatar;
+        }
+        this.broadcastLobbyAndState(false);
+        this.renderLobbyUI();
+        GameApp.renderAll();
+      },
+
+      handleIncomingClientConnection(conn) {
+        conn.on('data', (data) => {
+          if (!data || !data.type) return;
+
+          if (data.type === 'JOIN_REQUEST') {
+            const assignedSeat = this.processJoinRequest(data.name, data.avatar, conn.peer, (reply) => {
+              conn.send(reply);
+            });
+            if (assignedSeat !== -1) {
+              this.clientConns[assignedSeat] = conn;
+            } else {
+              setTimeout(() => conn.close(), 500);
+            }
+          } else if (data.type === 'CLIENT_PLAY_CARD') {
+            if (this.mode === 'host') {
+              GameApp.executePlayCard(data.seatIndex, data.suit, data.rank, data.placement);
+            }
+          } else if (data.type === 'CLIENT_BURY_CARD') {
+            if (this.mode === 'host') {
+              GameApp.executeBuryCard(data.seatIndex, data.suit, data.rank);
+            }
+          } else if (data.type === 'QUICK_CHAT') {
+            if (this.mode === 'host') {
+              this.broadcastQuickChat(data.seatIndex, data.text);
+            }
+          } else if (data.type === 'UPDATE_IDENTITY') {
+            if (this.mode === 'host') {
+              this.updateSeatIdentity(data.seatIndex, data.name, data.avatar);
+            }
+          }
+        });
+
+        conn.on('close', () => {
+          this.handleClientDisconnect(conn.peer);
+        });
+
+        conn.on('error', () => {
+          this.handleClientDisconnect(conn.peer);
+        });
+      },
+
+      handleClientDisconnect(peerId) {
+        if (this.mode !== 'host') return;
+        const seatIdx = this.seats.findIndex(s => s.peerId === peerId);
+        if (seatIdx === -1) return;
+
+        const oldName = this.seats[seatIdx].name;
+        delete this.clientConns[seatIdx];
+
+        this.seats[seatIdx] = {
+          seatIndex: seatIdx,
+          type: 'bot',
+          name: `${DEFAULT_BOT_NAMES[seatIdx - 1] || 'Bot'} (AI)`,
+          avatar: '🤖',
+          peerId: null,
+          connected: false
+        };
+
+        if (GameApp.state && GameApp.state.players && GameApp.state.players[seatIdx]) {
+          GameApp.state.players[seatIdx].isHuman = false;
+          GameApp.state.players[seatIdx].name = `${oldName} (Bot AI)`;
+          GameApp.state.actionBannerText = `⚠️ ${oldName} keluar. Kursi ${seatIdx + 1} dilanjutkan oleh Bot CPU.`;
+          GameApp.scheduleNextTurnIfNeeded();
+        }
+
+        this.setLobbyStatus(`${oldName} keluar. Kursi ${seatIdx + 1} otomatis diambil alih Bot CPU.`, 'amber');
+        this.broadcastLobbyAndState(false);
+        this.renderLobbyUI();
+        GameApp.renderAll();
+      },
+
+      /**
+       * CLIENT: Automatically joins the host's room after submitting their mandatory name!
+       */
+      autoJoinRoomByLink(rawCode) {
+        const cleanCode = (rawCode || '').trim().toUpperCase();
+        if (!cleanCode) return;
+
+        this.cleanupConnections();
+        this.mode = 'client';
+        this.roomCode = cleanCode;
+        this._localClientId = `client_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
+
+        this.setLobbyStatus(`Menghubungkan Anda (${this.myNickname}) ke meja #${cleanCode}...`, 'amber');
+        this.renderLobbyUI();
+
+        // 1. Try instant BroadcastChannel join (works across tabs in same browser / preview)
+        this.setupBroadcastChannel(cleanCode);
+        if (this.bcChannel) {
+          this.bcChannel.postMessage({
+            type: 'JOIN_REQUEST',
+            name: this.myNickname,
+            avatar: this.myAvatar,
+            clientId: this._localClientId
+          });
+        }
+
+        // 2. Also connect via PeerJS WebRTC for cross-device online play
+        if (typeof Peer === 'undefined') return;
+
+        const hostPeerId = `${PEER_PREFIX}${cleanCode}`;
+        try {
+          const peer = new Peer({ debug: 1 });
+          this.peer = peer;
+
+          peer.on('open', () => {
+            const conn = peer.connect(hostPeerId, { reliable: true });
+            this.hostConn = conn;
+
+            conn.on('open', () => {
+              conn.send({
+                type: 'JOIN_REQUEST',
+                name: this.myNickname,
+                avatar: this.myAvatar
+              });
+            });
+
+            conn.on('data', (data) => {
+              this.handleHostPacket(data);
+            });
+
+            conn.on('close', () => {
+              this.setLobbyStatus('Koneksi dengan Host terputus. Kembali ke Mode Solo.', 'red');
+              this.leaveRoom(false);
+            });
+          });
+
+          peer.on('error', () => {
+            // If BroadcastChannel already succeeded, ignore PeerJS error
+            if (this.mySeatIndex > 0) return;
+            this.setLobbyStatus(`Tidak dapat menemukan meja #${cleanCode} atau Host sudah menutup meja.`, 'red');
+          });
+        } catch (e) {}
+      },
+
+      sendPacketToHost(packet) {
+        if (this.hostConn && this.hostConn.open) {
+          try { this.hostConn.send(packet); } catch (e) {}
+        } else if (this.bcChannel) {
+          try { this.bcChannel.postMessage(packet); } catch (e) {}
+        }
+      },
+
+      handleHostPacket(data) {
+        if (!data || !data.type) return;
+
+        if (data.type === 'JOIN_REJECTED') {
+          this.setLobbyStatus(data.reason || 'Gagal bergabung ke meja.', 'red');
+          this.cleanupConnections();
+          return;
+        }
+
+        if (data.type === 'JOIN_ACCEPTED') {
+          this.mode = 'client';
+          this.roomCode = data.roomCode;
+          this.mySeatIndex = data.seatIndex;
+          this.seats = data.seats || this.seats;
+          this.setLobbyStatus(`✅ Berhasil duduk di Kursi ${this.mySeatIndex + 1} sebagai "${this.myNickname}"!`, 'emerald');
+          this.renderLobbyUI();
+
+          if (data.state) {
+            GameApp.applyRemoteState(data.state);
+          }
+          // Close lobby modal automatically after 1.1 seconds so the guest goes straight to the card table!
+          setTimeout(() => {
+            GameApp.closeLobbyModal();
+            GameApp.showHintToast(`🎉 Selamat datang di Meja, ${this.myNickname} (Kursi ${this.mySeatIndex + 1})!`);
+          }, 1100);
+          return;
+        }
+
+        if (data.type === 'SYNC_STATE') {
+          if (data.seats) {
+            this.seats = data.seats;
+            this.renderLobbyUI();
+          }
+          if (data.state) {
+            GameApp.applyRemoteState(data.state);
+          }
+          if (data.closeLobby) {
+            GameApp.closeLobbyModal();
+          }
+          return;
+        }
+
+        if (data.type === 'QUICK_CHAT') {
+          GameApp.displayChatBubble(data.seatIndex, data.text);
+        }
+      },
+
+      /**
+       * Broadcasts current lobby seats & game state from Host to all Clients (PeerJS + BroadcastChannel).
+       */
+      broadcastLobbyAndState(closeLobby = false) {
+        if (this.mode !== 'host') return;
+        const payload = {
+          type: 'SYNC_STATE',
+          seats: this.seats,
+          state: GameApp.state,
+          closeLobby
+        };
+        Object.values(this.clientConns).forEach(conn => {
+          if (conn && conn.open) {
+            try { conn.send(payload); } catch (e) {}
+          }
+        });
+        if (this.bcChannel) {
+          try { this.bcChannel.postMessage(payload); } catch (e) {}
+        }
+      },
+
+      broadcastQuickChat(seatIndex, text) {
+        GameApp.displayChatBubble(seatIndex, text);
+        const payload = { type: 'QUICK_CHAT', seatIndex, text };
+        Object.values(this.clientConns).forEach(conn => {
+          if (conn && conn.open) {
+            try { conn.send(payload); } catch (e) {}
+          }
+        });
+        if (this.bcChannel) {
+          try { this.bcChannel.postMessage(payload); } catch (e) {}
+        }
+      },
+
+      hostStartMatch() {
+        if (this.mode === 'client') return;
+        GameApp.closeLobbyModal();
+        GameApp.startNewGame();
+        if (this.mode === 'host') {
+          this.broadcastLobbyAndState(true);
+        }
+      },
+
+      leaveRoom(resetToSoloGame = true) {
+        this.cleanupConnections();
+        this.mode = 'solo';
+        this.roomCode = null;
+        this.mySeatIndex = 0;
+        try {
+          window.history.replaceState({}, '', window.location.pathname);
+        } catch (e) {}
+        this.seats = [
+          { seatIndex: 0, type: 'human', name: this.myNickname || 'Anda', avatar: this.myAvatar || '😎', peerId: null, connected: true },
+          { seatIndex: 1, type: 'bot',   name: DEFAULT_BOT_NAMES[0], avatar: '🤖', peerId: null, connected: false },
+          { seatIndex: 2, type: 'bot',   name: DEFAULT_BOT_NAMES[1], avatar: '🦊', peerId: null, connected: false },
+          { seatIndex: 3, type: 'bot',   name: DEFAULT_BOT_NAMES[2], avatar: '🐯', peerId: null, connected: false }
+        ];
+        this.renderLobbyUI();
+        if (resetToSoloGame) {
+          this.setLobbyStatus('Link Undangan diputus. Anda kembali bermain di Mode Solo (vs Bot).', 'amber');
+          GameApp.startNewGame();
+        }
+      },
+
+      cleanupConnections() {
+        Object.values(this.clientConns).forEach(c => {
+          try { c.close(); } catch (e) {}
+        });
+        this.clientConns = {};
+        if (this.hostConn) {
+          try { this.hostConn.close(); } catch (e) {}
+          this.hostConn = null;
+        }
+        if (this.peer) {
+          try { this.peer.destroy(); } catch (e) {}
+          this.peer = null;
+        }
+        if (this.bcChannel) {
+          try { this.bcChannel.close(); } catch (e) {}
+          this.bcChannel = null;
+        }
+      },
+
+      /**
+       * 1-Click Copy Invite Link with visual button feedback
+       */
+      copyInviteLinkOneClick() {
+        if (!this.roomCode) {
+          this.createRoomAutomatically();
+        }
+        const inviteUrl = this.getInviteUrl();
+        this.copyToClipboard(inviteUrl);
+
+        const btn = document.getElementById('copyInviteLinkBtn');
+        if (btn) {
+          const originalHtml = btn.innerHTML;
+          btn.innerHTML = `<span>✅ Link Undangan Berhasil Disalin!</span>`;
+          btn.className = 'w-full py-2.5 px-3 rounded-xl bg-amber-400 text-slate-950 font-extrabold text-xs flex items-center justify-center gap-1.5 shadow-lg transition';
+          setTimeout(() => {
+            btn.innerHTML = originalHtml;
+            btn.className = 'w-full py-2.5 px-3 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-extrabold text-xs flex items-center justify-center gap-1.5 shadow-lg shadow-emerald-500/20 transition active:scale-95';
+          }, 2200);
+        }
+
+        this.setLobbyStatus(`✅ Link Undangan berhasil disalin! Tempel & kirim ke teman Anda.`, 'emerald');
+        SoundEngine.playCardSnap();
+      },
+
+      /**
+       * 1-Click Share Invite Link directly to WhatsApp
+       */
+      shareToWhatsApp() {
+        if (!this.roomCode) {
+          this.createRoomAutomatically();
+        }
+        const inviteUrl = this.getInviteUrl();
+        const hostName = this.myNickname || 'Temanmu';
+        const text = `🎴 Ayo mabar *Sevens (7♠ Tutup Kartu)* bareng *${hostName}*! Klik link ini, isi namamu, dan langsung duduk di meja:\n${inviteUrl}`;
+        const waUrl = `https://wa.me/?text=${encodeURIComponent(text)}`;
+        window.open(waUrl, '_blank', 'noopener,noreferrer');
+        this.setLobbyStatus(`📲 Membuka WhatsApp untuk membagikan link undangan...`, 'emerald');
+      },
+
+      /**
+       * Lets the user test the exact "Friend Clicked Invite Link -> Mandatory Name Pop-up" flow right inside the preview!
+       */
+      simulateFriendOpeningLink() {
+        const testCode = this.roomCode || this.generateShortCode();
+        GameApp.closeLobbyModal();
+        this.pendingInviteRoomCode = testCode;
+        this.openMandatoryNameModal('invite_join', testCode);
+      },
+
+      copyToClipboard(text) {
+        const ta = document.createElement('textarea');
+        ta.value = text;
+        ta.style.position = 'fixed';
+        ta.style.opacity = '0';
+        document.body.appendChild(ta);
+        ta.select();
+        try { document.execCommand('copy'); } catch (e) {}
+        document.body.removeChild(ta);
+      },
+
+      renderLobbyUI() {
+        const myNameEl = document.getElementById('lobbyMyNameDisplay');
+        const myAvatarEl = document.getElementById('lobbyMyAvatar');
+        const linkInput = document.getElementById('inviteLinkReadonlyInput');
+        const roleBadge = document.getElementById('lobbyRoleBadge');
+        const seatsList = document.getElementById('lobbySeatsList');
+        const startBtn = document.getElementById('lobbyHostStartBtn');
+
+        if (myNameEl) myNameEl.textContent = this.myNickname || 'Anda';
+        if (myAvatarEl) myAvatarEl.textContent = this.myAvatar || '😎';
+        if (linkInput) linkInput.value = this.getInviteUrl();
+
+        if (roleBadge && startBtn) {
+          if (this.mode === 'client') {
+            roleBadge.textContent = `👤 TAMU UNDANGAN (KURSI ${this.mySeatIndex + 1})`;
+            roleBadge.className = 'text-[10px] font-extrabold px-2 py-0.5 rounded bg-emerald-400 text-slate-950';
+            startBtn.classList.add('hidden');
+          } else {
+            roleBadge.textContent = '👑 HOST PEMILIK MEJA';
+            roleBadge.className = 'text-[10px] font-extrabold px-2 py-0.5 rounded bg-amber-400 text-slate-950';
+            startBtn.classList.remove('hidden');
+          }
+        }
+
+        if (!seatsList) return;
+        seatsList.innerHTML = this.seats.map(seat => {
+          const isMe = seat.seatIndex === this.mySeatIndex;
+          const isHuman = seat.type === 'human';
+          return `
+            <div class="p-3 rounded-xl border flex items-center justify-between ${
+              isMe ? 'bg-emerald-950/80 border-emerald-400 shadow' : isHuman ? 'bg-indigo-950/60 border-indigo-400/60' : 'bg-slate-950/70 border-slate-800'
+            }">
+              <div class="flex items-center gap-2.5">
+                <div class="w-9 h-9 rounded-lg bg-slate-900 border border-slate-700 flex items-center justify-center text-lg">
+                  ${seat.avatar}
+                </div>
+                <div>
+                  <div class="flex items-center gap-1.5">
+                    <span class="font-extrabold text-xs text-white">${seat.name}</span>
+                    ${isMe ? '<span class="text-[9px] px-1.5 py-0.2 rounded bg-emerald-400 text-slate-950 font-extrabold">ANDA</span>' : ''}
+                  </div>
+                  <span class="text-[10px] ${isHuman ? 'text-emerald-300 font-semibold' : 'text-slate-400'}">
+                    Kursi ${seat.seatIndex + 1} • ${isHuman ? '🟢 Pemain Manusia' : '🤖 Diisi Bot CPU'}
+                  </span>
+                </div>
+              </div>
+            </div>
+          `;
+        }).join('');
+      }
+    };
+
+    /**
+     * =========================================================================
+     * MODULE 5: MAIN GAME CONTROLLER & PERSPECTIVE-AWARE UI RENDERER
+     * =========================================================================
+     */
+    const STORAGE_KEY = 'sevens_tutup_kartu_golden68_v4';
+
+    const GameApp = {
+      state: null,
+      cpuTimer: null,
+      thinkHighlightTimer: null,
+      showPlayableHighlights: false,
+      lastKnownTurnIndex: null,
+      wrongClickedCardKey: null,
+      kbFocusIndex: 0,
+      hintedCardKey: null,
+      hoveredTargets: [],
+      buriedTrayOpen: false,
+      pendingAceSuit: null,
+      activeChatBubbles: {}, // seatIndex -> { text, timer }
+
+      settings: {
+        cpuDifficulty: 'hard',
+        cpuDelayMs: 650
+      },
+
+      init() {
+        this.bindKeyboardShortcuts();
+        MultiplayerManager.initFromUrlParams();
+
+        const restored = this.loadStateFromStorage();
+        if (!restored) {
+          this.startNewGame();
+        } else {
+          this.resetTurnHighlightTimer();
+          this.renderAll();
+          this.scheduleNextTurnIfNeeded();
+        }
+      },
+
+      /**
+       * Manages the 10-second "Think First" delay before highlighting playable cards in yellow.
+       * During the first 10 seconds of the human player's turn, playable cards are NOT highlighted
+       * so the player thinks and checks the board themselves. After 10 seconds of inactivity,
+       * yellow highlights automatically turn on.
+       */
+      resetTurnHighlightTimer() {
+        if (this.thinkHighlightTimer) {
+          clearTimeout(this.thinkHighlightTimer);
+          this.thinkHighlightTimer = null;
+        }
+        this.showPlayableHighlights = false;
+        this.wrongClickedCardKey = null;
+
+        if (!this.state || this.state.isGameOver) return;
+
+        const mySeat = this.getLocalSeatIndex();
+        if (this.state.currentTurnIndex !== mySeat) return;
+
+        const me = this.state.players[mySeat];
+        const playableList = RuleEngine.getPlayableCards(me.hand, this.state.board, this.state.isVeryFirstTurn);
+
+        // Only start the 10-second timer if the human player actually has valid playable moves
+        if (playableList.length > 0) {
+          this.thinkHighlightTimer = setTimeout(() => {
+            this.thinkHighlightTimer = null;
+            if (!this.state || this.state.isGameOver) return;
+            if (this.state.currentTurnIndex !== this.getLocalSeatIndex()) return;
+
+            this.showPlayableHighlights = true;
+            this.showHintToast('💡 10 detik berlalu: Kartu yang bisa jalan ditandai kuning.');
+            this.renderBoard();
+            this.renderHumanDock();
+          }, 10000);
+        }
+      },
+
+      /**
+       * Returns the local player's seat index (0 in Solo or Host mode; 1..3 for connected Clients).
+       */
+      getLocalSeatIndex() {
+        return MultiplayerManager.mode === 'client' ? MultiplayerManager.mySeatIndex : 0;
+      },
+
+      /**
+       * Triggered by "Main Baru" or "Main Ronde Baru" buttons.
+       */
+      requestNewGame() {
+        if (MultiplayerManager.mode === 'client') {
+          this.showHintToast('Hanya Host pemilik room yang dapat memulai ronde baru.');
+          return;
+        }
+        this.startNewGame();
+        if (MultiplayerManager.mode === 'host') {
+          MultiplayerManager.broadcastLobbyAndState(false);
+        }
+      },
+
+      /**
+       * Starts a fresh 4-player game (13 cards each) and finds the holder of 7♠.
+       */
+      startNewGame() {
+        if (this.cpuTimer) {
+          clearTimeout(this.cpuTimer);
+          this.cpuTimer = null;
+        }
+        if (this.thinkHighlightTimer) {
+          clearTimeout(this.thinkHighlightTimer);
+          this.thinkHighlightTimer = null;
+        }
+        this.showPlayableHighlights = false;
+        this.wrongClickedCardKey = null;
+        this.closeResultModal();
+        this.closeAceChoiceModal();
+        this.hintedCardKey = null;
+        this.hoveredTargets = [];
+        this.kbFocusIndex = 0;
+
+        // 1. Build & shuffle 52-card deck
+        const deck = [];
+        SUITS.forEach(s => {
+          for (let r = 1; r <= 13; r++) {
+            deck.push({ suit: s.id, rank: r });
+          }
+        });
+        for (let i = deck.length - 1; i > 0; i--) {
+          const j = Math.floor(Math.random() * (i + 1));
+          [deck[i], deck[j]] = [deck[j], deck[i]];
+        }
+
+        // 2. Setup 4 players based on Lobby Seats (Solo or Multiplayer Host)
+        const players = [];
+        for (let i = 0; i < 4; i++) {
+          const seatInfo = MultiplayerManager.seats[i];
+          const isHumanSeat = MultiplayerManager.mode === 'solo' ? (i === 0) : (seatInfo.type === 'human');
+          players.push({
+            id: i,
+            name: isHumanSeat ? seatInfo.name : DEFAULT_BOT_NAMES[i - 1] || `Bot ${i}`,
+            avatar: isHumanSeat ? seatInfo.avatar : ['🤖', '🦊', '🐯'][i - 1] || '🤖',
+            isHuman: isHumanSeat,
+            hand: [],
+            buriedCards: [],
+            violatedGoldenRule: false,
+            violatedCard: null,
+            violationDetail: null,
+            lastActionText: 'Siap'
+          });
+        }
+
+        // 3. Deal 13 cards to each of the 4 players
+        deck.forEach((card, idx) => {
+          players[idx % 4].hand.push(card);
+        });
+        players.forEach(p => this.sortHand(p.hand));
+
+        // 4. Find who holds 7♠ (7 Spades) — mandatory first player!
+        const sevenSpadesHolder = players.findIndex(p =>
+          p.hand.some(c => c.suit === 'spades' && c.rank === 7)
+        );
+        const starterIndex = sevenSpadesHolder !== -1 ? sevenSpadesHolder : 0;
+
+        this.state = {
+          board: RuleEngine.createEmptyBoard(),
+          players,
+          currentTurnIndex: starterIndex,
+          isVeryFirstTurn: true,
+          lastPlayedSlot: null, // { suit, colKey }
+          actionBannerText: `${players[starterIndex].name} memegang 7♠ dan wajib jalan pertama!`,
+          isGameOver: false,
+          endReason: null
+        };
+
+        this.lastKnownTurnIndex = starterIndex;
+        this.resetTurnHighlightTimer();
+        this.saveStateToStorage();
+        this.renderAll();
+        this.scheduleNextTurnIfNeeded();
+      },
+
+      /**
+       * Used by Client in Multiplayer mode to apply the authoritative state from Host.
+       */
+      applyRemoteState(remoteState) {
+        const wasGameOver = this.state ? this.state.isGameOver : false;
+        const prevTurn = this.state ? this.state.currentTurnIndex : null;
+        this.state = remoteState;
+        this.hintedCardKey = null;
+        this.hoveredTargets = [];
+
+        if (prevTurn !== this.state.currentTurnIndex || this.state.isVeryFirstTurn) {
+          this.lastKnownTurnIndex = this.state.currentTurnIndex;
+          this.resetTurnHighlightTimer();
+        }
+
+        this.renderAll();
+
+        if (this.state.isGameOver && !wasGameOver) {
+          const anyViolation = this.state.players.some(p => p.violatedGoldenRule);
+          if (anyViolation) {
+            SoundEngine.playGoldenRuleAlarm();
+          } else {
+            SoundEngine.playWinChime();
+          }
+          setTimeout(() => this.showResultModal(), 450);
+        } else if (!this.state.isGameOver) {
+          this.closeResultModal();
+          SoundEngine.playCardSnap();
+        }
+      },
+
+      /**
+       * Strictly sorts hand cards by:
+       * 1. Sekop (spades ♠)
+       * 2. Hati (hearts ♥)
+       * 3. Keriting (clubs ♣)
+       * 4. Wajik (diamonds ♦)
+       */
+      sortHand(hand) {
+        const suitOrder = { spades: 0, hearts: 1, clubs: 2, diamonds: 3 };
+        hand.sort((a, b) => {
+          if (suitOrder[a.suit] !== suitOrder[b.suit]) {
+            return suitOrder[a.suit] - suitOrder[b.suit];
+          }
+          return a.rank - b.rank;
+        });
+      },
+
+      /**
+       * Handler when the local human player clicks a card in their hand.
+       * Automatically determines whether the player is in PLAY mode or BURY ("Matikan Kartu") mode.
+       * - During the first 10 seconds, all cards are clickable so the player thinks for themselves.
+       * - If the player clicks an invalid card while they DO have a playable card, shakes the card and shows a toast.
+       * - NOTE: No warning is shown if the player selects 6 or 8 in Bury Mode (Silent Trap!).
+       */
+      handleHumanCardClick(suitId, rank) {
+        if (!this.state || this.state.isGameOver) return;
+        const mySeat = this.getLocalSeatIndex();
+        if (this.state.currentTurnIndex !== mySeat) return;
+
+        const me = this.state.players[mySeat];
+        const playableList = RuleEngine.getPlayableCards(me.hand, this.state.board, this.state.isVeryFirstTurn);
+
+        // CASE A: Player has playable moves -> Must play a valid card
+        if (playableList.length > 0) {
+          const match = playableList.find(p => p.suit === suitId && p.rank === rank);
+          if (!match) {
+            // Player clicked a card that cannot be played yet! Shake that card & tell them to inspect the board
+            this.wrongClickedCardKey = `${suitId}-${rank}`;
+            SoundEngine.playBuryCard();
+            const warnMsg = this.state.isVeryFirstTurn
+              ? 'Giliran pertama wajib mengeluarkan kartu 7♠ (7 Sekop)!'
+              : `Kartu ${formatCardLabel(suitId, rank)} belum nyambung di meja! Coba perhatikan lagi.`;
+            this.showHintToast(`⚠️ ${warnMsg}`);
+            this.renderHumanDock();
+            clearTimeout(this._wrongShakeTimer);
+            this._wrongShakeTimer = setTimeout(() => {
+              this.wrongClickedCardKey = null;
+              this.renderHumanDock();
+            }, 450);
+            return;
+          }
+
+          // If this card is the VERY FIRST Ace and BOTH Left of 2 & Right of King are open, ask player which side to lock!
+          if (rank === 1 && match.placements.length === 2) {
+            this.openAceChoiceModal(suitId);
+            return;
+          }
+
+          this.sendOrExecutePlayCard(mySeat, suitId, rank, match.placements[0]);
+          return;
+        }
+
+        // CASE B: Player has NO playable moves -> Immediately BURY ("Matikan") the clicked card without warning!
+        this.sendOrExecuteBuryCard(mySeat, suitId, rank);
+      },
+
+      sendOrExecutePlayCard(seatIndex, suitId, rank, placement) {
+        if (MultiplayerManager.mode === 'client') {
+          MultiplayerManager.sendPacketToHost({
+            type: 'CLIENT_PLAY_CARD',
+            seatIndex,
+            suit: suitId,
+            rank,
+            placement
+          });
+          return;
+        }
+        this.executePlayCard(seatIndex, suitId, rank, placement);
+      },
+
+      sendOrExecuteBuryCard(seatIndex, suitId, rank) {
+        if (MultiplayerManager.mode === 'client') {
+          MultiplayerManager.sendPacketToHost({
+            type: 'CLIENT_BURY_CARD',
+            seatIndex,
+            suit: suitId,
+            rank
+          });
+          return;
+        }
+        this.executeBuryCard(seatIndex, suitId, rank);
+      },
+
+      /**
+       * Executes playing a card onto the board (Host / Solo Authoritative).
+       */
+      executePlayCard(playerIndex, suitId, rank, placement) {
+        if (!this.state || this.state.isGameOver) return;
+        if (this.state.currentTurnIndex !== playerIndex) return;
+
+        const player = this.state.players[playerIndex];
+        const validPlacements = RuleEngine.getValidPlacementsForCard(
+          this.state.board,
+          { suit: suitId, rank },
+          this.state.isVeryFirstTurn
+        );
+
+        const chosenPlacement = placement && validPlacements.includes(placement)
+          ? placement
+          : validPlacements[0];
+
+        if (!chosenPlacement) return;
+
+        const cardIdx = player.hand.findIndex(c => c.suit === suitId && c.rank === rank);
+        if (cardIdx === -1) return;
+
+        // Remove card from hand
+        player.hand.splice(cardIdx, 1);
+
+        const suitRow = this.state.board[suitId];
+        let colKey = String(rank);
+        const cardLabel = formatCardLabel(suitId, rank);
+
+        if (rank === 1) {
+          const isFirstAceOnBoard = this.state.board.globalAceSide === null;
+          // Lock global Ace direction for all subsequent Aces!
+          this.state.board.globalAceSide = chosenPlacement;
+
+          if (chosenPlacement === 'left') {
+            suitRow.slots.ace_left = { playedBy: player.id };
+            suitRow.lockedByAce = 'left';
+            suitRow.lockedByPlayer = player.id;
+            colKey = 'ace_left';
+            player.lastActionText = `Tutup ${cardLabel} (Kiri 2)`;
+            this.state.actionBannerText = isFirstAceOnBoard
+              ? `🔒 ${player.name} menutup ${cardLabel} di Kiri Angka 2! Semua As berikutnya WAJIB keluar di Kiri 2!`
+              : `🔒 ${player.name} menutup jalur dengan ${cardLabel} di Kiri Angka 2! Jalur ${suitId.toUpperCase()} MATI!`;
+          } else {
+            suitRow.slots.ace_right = { playedBy: player.id };
+            suitRow.lockedByAce = 'right';
+            suitRow.lockedByPlayer = player.id;
+            colKey = 'ace_right';
+            player.lastActionText = `Tutup ${cardLabel} (Kanan K)`;
+            this.state.actionBannerText = isFirstAceOnBoard
+              ? `🔒 ${player.name} menutup ${cardLabel} di Kanan King! Semua As berikutnya WAJIB keluar di Kanan K!`
+              : `🔒 ${player.name} menutup jalur dengan ${cardLabel} di Kanan King! Jalur ${suitId.toUpperCase()} MATI!`;
+          }
+          SoundEngine.playSuitLock();
+        } else {
+          suitRow.slots[rank] = { playedBy: player.id };
+          player.lastActionText = `Main ${cardLabel}`;
+          this.state.actionBannerText = `${player.name} mengeluarkan kartu ${cardLabel}`;
+          SoundEngine.playCardSnap();
+        }
+
+        this.state.isVeryFirstTurn = false;
+        this.state.lastPlayedSlot = { suit: suitId, colKey };
+        this.hintedCardKey = null;
+        this.hoveredTargets = [];
+
+        // RULE CHECK: If an Ace just closed this suit, check if rank 6 or rank 8 of this suit
+        // has NOT been played on the board and is still held in any player's hand!
+        if (rank === 1) {
+          const trappedVictims = [];
+          [6, 8].forEach(criticalRank => {
+            if (suitRow.slots[criticalRank] === null) {
+              this.state.players.forEach(p => {
+                const handIdx = p.hand.findIndex(c => c.suit === suitId && c.rank === criticalRank);
+                if (handIdx !== -1) {
+                  const [trappedCard] = p.hand.splice(handIdx, 1);
+                  p.buriedCards.push(trappedCard);
+                  p.violatedGoldenRule = true;
+                  p.violatedCard = trappedCard;
+                  p.violationDetail = `Memegang ${formatCardLabel(suitId, criticalRank)} saat jalur ditutup ${cardLabel} oleh ${player.name}`;
+                  p.lastActionText = `TERJEBAK (${formatCardLabel(suitId, criticalRank)}) 💀`;
+                  trappedVictims.push({
+                    victimName: p.name,
+                    cardLabel: formatCardLabel(suitId, criticalRank)
+                  });
+                }
+              });
+            }
+          });
+
+          if (trappedVictims.length > 0) {
+            const victimDesc = trappedVictims.map(v => `${v.victimName} (memegang ${v.cardLabel})`).join(', ');
+            this.state.actionBannerText = `🚨 JALUR DIKUNCI ${cardLabel}! ${victimDesc} terjebak belum mengeluarkan angka 6/8 dan langsung KALAH!`;
+            this.state.isGameOver = true;
+            this.state.endReason = `Jalur ditutup oleh ${player.name} dengan ${cardLabel} ketika kartu keramat belum keluar! ${victimDesc} dinyatakan KALAH OTOMATIS!`;
+            SoundEngine.playGoldenRuleAlarm();
+            this.saveStateToStorage();
+            this.renderAll();
+            if (MultiplayerManager.mode === 'host') {
+              MultiplayerManager.broadcastLobbyAndState(false);
+            }
+            setTimeout(() => this.showResultModal(), 550);
+            return;
+          }
+        }
+
+        this.advanceToNextTurn();
+      },
+
+      /**
+       * Executes burying ("Mematikan") 1 card face-down when a player has no legal play.
+       * Immediately checks the Golden Rule (6 & 8) AFTER the player buries the card.
+       */
+      executeBuryCard(playerIndex, suitId, rank) {
+        if (!this.state || this.state.isGameOver) return;
+        if (this.state.currentTurnIndex !== playerIndex) return;
+
+        const player = this.state.players[playerIndex];
+        const playableList = RuleEngine.getPlayableCards(player.hand, this.state.board, this.state.isVeryFirstTurn);
+
+        // Rule Enforcement: Cannot bury a card if player holds ANY playable card!
+        if (playableList.length > 0) return;
+
+        const cardIdx = player.hand.findIndex(c => c.suit === suitId && c.rank === rank);
+        if (cardIdx === -1) return;
+
+        const [buriedCard] = player.hand.splice(cardIdx, 1);
+        player.buriedCards.push(buriedCard);
+        this.hintedCardKey = null;
+        this.hoveredTargets = [];
+
+        const cardLabel = formatCardLabel(suitId, rank);
+
+        // GOLDEN RULE CHECK: Did this player just bury a 6 or an 8?
+        if (RuleEngine.isGoldenRuleCard(rank)) {
+          player.violatedGoldenRule = true;
+          player.violatedCard = buriedCard;
+          player.violationDetail = `Mematikan kartu terlarang ${cardLabel} (Golden Rule Angka 6 & 8)`;
+          player.lastActionText = `GUGUR (${cardLabel}) 💀`;
+          this.state.actionBannerText = `🚨 GOLDEN RULE TERLANGGAR! ${player.name} mematikan kartu angka ${rank} (${cardLabel}) dan langsung KALAH!`;
+          this.state.isGameOver = true;
+          this.state.endReason = `GOLDEN RULE TERLANGGAR! ${player.name} mematikan kartu angka ${rank} (${cardLabel}). Angka 6 dan 8 tidak boleh dimatikan!`;
+          SoundEngine.playGoldenRuleAlarm();
+          this.saveStateToStorage();
+          this.renderAll();
+          if (MultiplayerManager.mode === 'host') {
+            MultiplayerManager.broadcastLobbyAndState(false);
+          }
+          setTimeout(() => this.showResultModal(), 550);
+          return;
+        }
+
+        SoundEngine.playBuryCard();
+        player.lastActionText = `Tutup 1 Kartu (${player.buriedCards.length})`;
+        this.state.actionBannerText = `${player.name} tidak punya jalan dan mematikan 1 kartu (Total: ${player.buriedCards.length} kartu mati)`;
+
+        this.advanceToNextTurn();
+      },
+
+      /**
+       * Advances turn clockwise or concludes the match once all 52 cards are played/buried.
+       */
+      advanceToNextTurn() {
+        const totalCardsRemaining = this.state.players.reduce((sum, p) => sum + p.hand.length, 0);
+        if (totalCardsRemaining === 0) {
+          this.state.isGameOver = true;
+          this.state.endReason = 'Seluruh 52 kartu telah selesai dimainkan atau ditutup. Saatnya perhitungan poin kartu mati!';
+          SoundEngine.playWinChime();
+          this.saveStateToStorage();
+          this.renderAll();
+          if (MultiplayerManager.mode === 'host') {
+            MultiplayerManager.broadcastLobbyAndState(false);
+          }
+          setTimeout(() => this.showResultModal(), 450);
+          return;
+        }
+
+        let nextIdx = (this.state.currentTurnIndex + 1) % 4;
+        let safety = 0;
+        while (this.state.players[nextIdx].hand.length === 0 && safety < 4) {
+          nextIdx = (nextIdx + 1) % 4;
+          safety++;
+        }
+
+        this.state.currentTurnIndex = nextIdx;
+        this.kbFocusIndex = 0;
+        this.lastKnownTurnIndex = nextIdx;
+        this.resetTurnHighlightTimer();
+
+        this.saveStateToStorage();
+        this.renderAll();
+        if (MultiplayerManager.mode === 'host') {
+          MultiplayerManager.broadcastLobbyAndState(false);
+        }
+        this.scheduleNextTurnIfNeeded();
+      },
+
+      /**
+       * Schedules AI bot move if current turn belongs to a CPU player (Host or Solo only).
+       */
+      scheduleNextTurnIfNeeded() {
+        if (!this.state || this.state.isGameOver) return;
+        if (MultiplayerManager.mode === 'client') return; // Clients wait for Host
+
+        const current = this.state.players[this.state.currentTurnIndex];
+
+        if (!current.isHuman && current.hand.length > 0) {
+          if (this.cpuTimer) clearTimeout(this.cpuTimer);
+          this.cpuTimer = setTimeout(() => {
+            const playable = RuleEngine.getPlayableCards(current.hand, this.state.board, this.state.isVeryFirstTurn);
+
+            if (playable.length > 0) {
+              const playDecision = BotAI.chooseBestPlay(
+                current,
+                this.state.board,
+                this.state.isVeryFirstTurn,
+                this.settings.cpuDifficulty
+              );
+              if (playDecision) {
+                this.executePlayCard(current.id, playDecision.card.suit, playDecision.card.rank, playDecision.placement);
+              }
+            } else {
+              const buryDecision = BotAI.chooseBestBury(
+                current,
+                this.state.board,
+                this.settings.cpuDifficulty
+              );
+              if (buryDecision) {
+                this.executeBuryCard(current.id, buryDecision.card.suit, buryDecision.card.rank);
+              }
+            }
+          }, Number(this.settings.cpuDelayMs) || 650);
+        }
+      },
+
+      /**
+       * Hint Engine for Local Human Player
+       */
+      triggerHint() {
+        if (!this.state || this.state.isGameOver) return;
+        const mySeat = this.getLocalSeatIndex();
+        if (this.state.currentTurnIndex !== mySeat) {
+          this.showHintToast('Tunggu giliran Anda untuk meminta Hint.');
+          return;
+        }
+
+        const me = this.state.players[mySeat];
+        const playable = RuleEngine.getPlayableCards(me.hand, this.state.board, this.state.isVeryFirstTurn);
+
+        if (playable.length > 0) {
+          // Pressing Hint also immediately activates playable card highlights
+          if (this.thinkHighlightTimer) {
+            clearTimeout(this.thinkHighlightTimer);
+            this.thinkHighlightTimer = null;
+          }
+          this.showPlayableHighlights = true;
+
+          const bestPlay = BotAI.chooseBestPlay(me, this.state.board, this.state.isVeryFirstTurn, 'hard');
+          if (bestPlay) {
+            this.hintedCardKey = `${bestPlay.card.suit}-${bestPlay.card.rank}`;
+            this.showHintToast(`💡 Saran Jalan: ${formatCardLabel(bestPlay.card.suit, bestPlay.card.rank)} — ${bestPlay.reason}`);
+            this.renderHumanDock();
+            this.renderBoard();
+          }
+        } else {
+          const bestBury = BotAI.chooseBestBury(me, this.state.board, 'hard');
+          if (bestBury) {
+            this.hintedCardKey = `${bestBury.card.suit}-${bestBury.card.rank}`;
+            this.showHintToast(`💡 Saran Tutup Kartu: ${formatCardLabel(bestBury.card.suit, bestBury.card.rank)} — ${bestBury.reason}`);
+            this.renderHumanDock();
+          }
+        }
+      },
+
+      showHintToast(msg) {
+        const toast = document.getElementById('hintReasonToast');
+        if (!toast) return;
+        toast.textContent = msg;
+        toast.classList.remove('hidden');
+        clearTimeout(this._hintTimer);
+        this._hintTimer = setTimeout(() => {
+          toast.classList.add('hidden');
+        }, 4500);
+      },
+
+      /**
+       * Quick Chat & Emotes
+       */
+      toggleQuickChatMenu() {
+        const menu = document.getElementById('quickChatMenu');
+        if (!menu) return;
+        menu.classList.toggle('hidden');
+        menu.classList.toggle('flex');
+      },
+
+      sendQuickChat(text) {
+        const menu = document.getElementById('quickChatMenu');
+        if (menu) {
+          menu.classList.add('hidden');
+          menu.classList.remove('flex');
+        }
+        const mySeat = this.getLocalSeatIndex();
+        if (MultiplayerManager.mode === 'client') {
+          MultiplayerManager.sendPacketToHost({ type: 'QUICK_CHAT', seatIndex: mySeat, text });
+          this.displayChatBubble(mySeat, text);
+        } else if (MultiplayerManager.mode === 'host') {
+          MultiplayerManager.broadcastQuickChat(mySeat, text);
+        } else {
+          this.displayChatBubble(mySeat, text);
+        }
+      },
+
+      displayChatBubble(seatIndex, text) {
+        SoundEngine.playChatPop();
+        const mySeat = this.getLocalSeatIndex();
+
+        if (seatIndex === mySeat) {
+          const localContainer = document.getElementById('localChatBubbleContainer');
+          if (localContainer) {
+            localContainer.innerHTML = `
+              <div class="animate-chat-bubble px-3 py-1.5 rounded-2xl bg-indigo-600 text-white font-extrabold text-xs shadow-xl border border-indigo-300 whitespace-nowrap">
+                💬 ${text}
+              </div>
+            `;
+          }
+        } else {
+          const oppBubble = document.getElementById(`oppChatBubble-${seatIndex}`);
+          if (oppBubble) {
+            oppBubble.innerHTML = `
+              <div class="animate-chat-bubble px-2.5 py-1 rounded-xl bg-indigo-600 text-white font-extrabold text-[11px] shadow-xl border border-indigo-300 whitespace-nowrap">
+                💬 ${text}
+              </div>
+            `;
+          }
+        }
+      },
+
+      /**
+       * Keyboard Shortcuts: Left/Right Arrow, Enter/Space, H for Hint
+       */
+      bindKeyboardShortcuts() {
+        window.addEventListener('keydown', (e) => {
+          const anyModalOpen =
+            !document.getElementById('mandatoryNameModal').classList.contains('hidden') ||
+            !document.getElementById('lobbyModal').classList.contains('hidden') ||
+            !document.getElementById('aceChoiceModal').classList.contains('hidden') ||
+            !document.getElementById('rulesModal').classList.contains('hidden') ||
+            !document.getElementById('resultModal').classList.contains('hidden');
+
+          if (anyModalOpen) return;
+          if (!this.state || this.state.isGameOver) return;
+
+          const mySeat = this.getLocalSeatIndex();
+          if (this.state.currentTurnIndex !== mySeat) return;
+
+          const me = this.state.players[mySeat];
+          const playable = RuleEngine.getPlayableCards(me.hand, this.state.board, this.state.isVeryFirstTurn);
+
+          // During the first 10 seconds (before highlights appear), navigate across all cards in hand so it doesn't give away the playable ones
+          const pool = (playable.length > 0 && this.showPlayableHighlights) ? playable : me.hand;
+          if (pool.length === 0) return;
+
+          if (e.key === 'ArrowRight' || e.key === 'Tab') {
+            e.preventDefault();
+            this.kbFocusIndex = (this.kbFocusIndex + 1) % pool.length;
+            this.renderHumanDock();
+          } else if (e.key === 'ArrowLeft') {
+            e.preventDefault();
+            this.kbFocusIndex = (this.kbFocusIndex - 1 + pool.length) % pool.length;
+            this.renderHumanDock();
+          } else if (e.key === 'ArrowDown') {
+            e.preventDefault();
+            const step = pool.length > 7 ? Math.min(7, Math.ceil(pool.length / 2)) : 1;
+            this.kbFocusIndex = (this.kbFocusIndex + step) % pool.length;
+            this.renderHumanDock();
+          } else if (e.key === 'ArrowUp') {
+            e.preventDefault();
+            const step = pool.length > 7 ? Math.min(7, Math.ceil(pool.length / 2)) : 1;
+            this.kbFocusIndex = (this.kbFocusIndex - step + pool.length) % pool.length;
+            this.renderHumanDock();
+          } else if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            const chosen = pool[this.kbFocusIndex] || pool[0];
+            if (chosen) {
+              this.handleHumanCardClick(chosen.suit, chosen.rank);
+            }
+          } else if (e.key.toLowerCase() === 'h') {
+            e.preventDefault();
+            this.triggerHint();
+          }
+        });
+      },
+
+      /**
+       * =======================================================================
+       * UI RENDERING METHODS (Perspective-Rotated for Local Seat)
+       * =======================================================================
+       */
+      renderAll() {
+        if (!this.state) return;
+        this.renderHeaderStatus();
+        this.renderOpponents();
+        this.renderBoard();
+        this.renderHumanDock();
+      },
+
+      renderHeaderStatus() {
+        const bannerText = document.getElementById('liveActionText');
+        const pulseDot = document.getElementById('turnPulseDot');
+        const colLeft = document.getElementById('colHeaderAceLeft');
+        const colRight = document.getElementById('colHeaderAceRight');
+
+        if (bannerText) {
+          bannerText.textContent = this.state.actionBannerText;
+        }
+
+        const side = this.state.board.globalAceSide;
+        if (side === 'left') {
+          if (colLeft) colLeft.className = 'text-[9px] sm:text-[11px] font-extrabold text-center text-slate-950 bg-cyan-400 rounded py-0.5 border border-cyan-200 font-mono-num shadow';
+          if (colRight) colRight.className = 'text-[9px] sm:text-[11px] font-bold text-center text-slate-600 bg-slate-900/50 rounded py-0.5 border border-slate-800 font-mono-num line-through opacity-40';
+        } else if (side === 'right') {
+          if (colLeft) colLeft.className = 'text-[9px] sm:text-[11px] font-bold text-center text-slate-600 bg-slate-900/50 rounded py-0.5 border border-slate-800 font-mono-num line-through opacity-40';
+          if (colRight) colRight.className = 'text-[9px] sm:text-[11px] font-extrabold text-center text-slate-950 bg-purple-400 rounded py-0.5 border border-purple-200 font-mono-num shadow';
+        } else {
+          if (colLeft) colLeft.className = 'text-[9px] sm:text-[11px] font-extrabold text-center text-cyan-300 bg-cyan-950/80 rounded py-0.5 border border-cyan-500/40 font-mono-num';
+          if (colRight) colRight.className = 'text-[9px] sm:text-[11px] font-extrabold text-center text-purple-300 bg-purple-950/80 rounded py-0.5 border border-purple-500/40 font-mono-num';
+        }
+
+        const mySeat = this.getLocalSeatIndex();
+        if (pulseDot) {
+          if (this.state.currentTurnIndex === mySeat && !this.state.isGameOver) {
+            pulseDot.className = 'w-2.5 h-2.5 rounded-full bg-amber-400 animate-ping shrink-0';
+          } else {
+            pulseDot.className = 'w-2.5 h-2.5 rounded-full bg-emerald-400 shrink-0';
+          }
+        }
+      },
+
+      /**
+       * Renders the 3 other seats rotated clockwise relative to `mySeat`:
+       * - Left Opponent: (mySeat + 1) % 4
+       * - Top Opponent:  (mySeat + 2) % 4
+       * - Right Opponent:(mySeat + 3) % 4
+       */
+      renderOpponents() {
+        const container = document.getElementById('opponentsContainer');
+        const mySeat = this.getLocalSeatIndex();
+        const relativeOrder = [
+          { seatIdx: (mySeat + 1) % 4, posLabel: 'Kiri' },
+          { seatIdx: (mySeat + 2) % 4, posLabel: 'Seberang' },
+          { seatIdx: (mySeat + 3) % 4, posLabel: 'Kanan' }
+        ];
+
+        container.innerHTML = relativeOrder.map(({ seatIdx, posLabel }) => {
+          const opp = this.state.players[seatIdx];
+          const isTurn = !this.state.isGameOver && this.state.currentTurnIndex === opp.id;
+          const borderClass = opp.violatedGoldenRule
+            ? 'border-red-500 bg-red-950/60 ring-2 ring-red-500/50'
+            : isTurn
+            ? 'border-amber-400 bg-emerald-900/90 ring-2 ring-amber-400/50 shadow-lg'
+            : 'border-emerald-800/70 bg-black/40';
+
+          const buriedCount = opp.buriedCards.length;
+
+          return `
+            <div class="relative rounded-xl px-2.5 sm:px-3 py-2 border transition-all duration-200 flex items-center justify-between gap-2 ${borderClass}">
+              <!-- Floating Quick Chat Bubble Container for this Opponent -->
+              <div id="oppChatBubble-${opp.id}" class="pointer-events-none absolute -bottom-7 left-3 z-40"></div>
+
+              <div class="flex items-center gap-2 min-w-0">
+                <div class="w-8 h-8 rounded-lg bg-emerald-950 border border-emerald-700/60 flex items-center justify-center text-base shrink-0">
+                  ${opp.avatar}
+                </div>
+                <div class="min-w-0">
+                  <div class="flex items-center gap-1.5">
+                    <span class="font-bold text-xs sm:text-sm text-white truncate">${opp.name}</span>
+                    <span class="text-[9px] px-1 rounded bg-emerald-950 text-emerald-400 border border-emerald-800 hidden md:inline">${posLabel}</span>
+                    ${isTurn ? '<span class="text-[9px] px-1.5 py-0.5 bg-amber-400 text-slate-950 font-extrabold rounded animate-pulse">GILIRAN</span>' : ''}
+                  </div>
+                  <div class="flex flex-wrap items-center gap-1.5 mt-0.5">
+                    <span class="text-[10px] px-1.5 py-0.2 rounded bg-slate-900 text-orange-300 border border-orange-500/30 font-mono-num">
+                      🂠 Mati: <strong>${buriedCount}</strong>
+                    </span>
+                    <span class="text-[10px] text-emerald-300/90 truncate hidden sm:inline">
+                      • ${opp.lastActionText}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Sisa Kartu Tangan -->
+              <div class="px-2 py-0.5 rounded-lg bg-emerald-950 border border-emerald-700/70 text-center shrink-0">
+                <span class="font-mono-num font-extrabold text-sm text-white">${opp.hand.length}</span>
+                <span class="text-[9px] text-emerald-400 block -mt-1">tangan</span>
+              </div>
+            </div>
+          `;
+        }).join('');
+      },
+
+      renderBoard() {
+        const container = document.getElementById('boardRowsContainer');
+        const board = this.state.board;
+        const mySeat = this.getLocalSeatIndex();
+        const isMyTurn = !this.state.isGameOver && this.state.currentTurnIndex === mySeat;
+        const me = this.state.players[mySeat];
+        const myPlayable = isMyTurn
+          ? RuleEngine.getPlayableCards(me.hand, board, this.state.isVeryFirstTurn)
+          : [];
+
+        container.innerHTML = SUITS.map(suit => {
+          const suitRow = board[suit.id];
+          const isLocked = suitRow.lockedByAce !== null;
+
+          const slotsHtml = BOARD_COLUMNS.map(col => {
+            const isLeftAceCol = col === 'ace_left';
+            const isRightAceCol = col === 'ace_right';
+            const isAceCol = isLeftAceCol || isRightAceCol;
+            const rankNum = isAceCol ? 1 : Number(col);
+            const displayLabel = isLeftAceCol ? 'A◀' : isRightAceCol ? '▶A' : RANK_LABELS[rankNum];
+
+            const cellData = suitRow.slots[col];
+            const isLastPlayed =
+              this.state.lastPlayedSlot &&
+              this.state.lastPlayedSlot.suit === suit.id &&
+              this.state.lastPlayedSlot.colKey === String(col);
+
+            const isHoverTarget = this.hoveredTargets.some(
+              t => t.suit === suit.id && t.colKey === String(col)
+            );
+
+            // 1. Slot already has a card played on it
+            if (cellData !== null) {
+              const aceCloserBadge = isAceCol
+                ? `<span class="text-[8px] px-1 rounded bg-amber-400 text-slate-950 font-extrabold">LOCK</span>`
+                : `<span class="text-[8px] sm:text-[10px] ${suit.colorClass}">${suit.symbol}</span>`;
+
+              return `
+                <div class="board-slot rounded-lg ${isAceCol ? 'bg-amber-50 border-2 border-amber-400' : 'bg-white border border-slate-300'} shadow-md ${
+                  isLastPlayed ? 'ring-2 ring-cyan-400' : ''
+                } flex flex-col items-center justify-between p-0.5 sm:p-1 animate-card-snap">
+                  <div class="w-full flex items-center justify-between leading-none">
+                    <span class="font-mono-num font-extrabold text-[9px] sm:text-xs ${suit.colorClass}">${RANK_LABELS[rankNum]}</span>
+                    ${aceCloserBadge}
+                  </div>
+                  <div class="text-xs sm:text-lg leading-none ${suit.colorClass}">
+                    ${suit.symbol}
+                  </div>
+                  <div class="w-full text-right leading-none hidden sm:block">
+                    <span class="font-mono-num font-bold text-[8px] ${suit.colorClass} opacity-75">${RANK_LABELS[rankNum]}</span>
+                  </div>
+                </div>
+              `;
+            }
+
+            // 2. If suit row is LOCKED by an Ace, all remaining empty slots in this row are permanently dead!
+            if (isLocked) {
+              return `
+                <div class="board-slot rounded-lg suit-locked-row border border-slate-800/80 flex flex-col items-center justify-center opacity-45"
+                  title="Jalur ${suit.name} sudah ditutup oleh Kartu As (${suitRow.lockedByAce === 'left' ? 'Kiri Angka 2' : 'Kanan King'})">
+                  <span class="text-[9px] sm:text-[10px] text-slate-400">🔒</span>
+                  <span class="font-mono-num text-[8px] text-slate-500">${RANK_LABELS[rankNum]}</span>
+                </div>
+              `;
+            }
+
+            // 3. Slot is empty and suit is unlocked: check if local player can play directly into this slot
+            const placementKey = isLeftAceCol ? 'left' : isRightAceCol ? 'right' : String(rankNum);
+            const humanCanPlayHere = myPlayable.some(
+              p => p.suit === suit.id && p.rank === rankNum && p.placements.includes(placementKey)
+            );
+
+            const isAceSideDisabledByGlobalLock =
+              (isLeftAceCol && board.globalAceSide === 'right') ||
+              (isRightAceCol && board.globalAceSide === 'left');
+
+            if (isAceSideDisabledByGlobalLock) {
+              return `
+                <div class="board-slot rounded-lg bg-slate-950/40 border border-slate-800/50 flex flex-col items-center justify-center opacity-25"
+                  title="Sisi As ini terkunci karena As pertama keluar di sisi seberang">
+                  <span class="font-mono-num text-[8px] text-slate-500 line-through">${displayLabel}</span>
+                </div>
+              `;
+            }
+
+            const isCenterSeven = rankNum === 7;
+
+            let emptyClass = isCenterSeven
+              ? 'bg-amber-500/15 border border-amber-400/40 text-amber-300/50'
+              : isAceCol
+              ? 'bg-slate-900/45 border border-slate-700/60 text-slate-400/40'
+              : 'bg-emerald-900/25 border border-emerald-800/45 text-emerald-500/30';
+
+            // Only highlight playable board slots in yellow AFTER the 10-second timer (or Hint)
+            if (humanCanPlayHere && this.showPlayableHighlights) {
+              emptyClass = 'bg-amber-400/20 border-2 border-dashed border-amber-400 text-amber-200 cursor-pointer hover:bg-amber-400/35';
+            } else if (humanCanPlayHere) {
+              emptyClass += ' cursor-pointer';
+            }
+
+            const clickAttr = humanCanPlayHere
+              ? `onclick="GameApp.sendOrExecutePlayCard(${mySeat}, '${suit.id}', ${rankNum}, '${placementKey}')"`
+              : '';
+
+            return `
+              <div ${clickAttr} class="board-slot rounded-lg flex flex-col items-center justify-center ${emptyClass} ${
+                isHoverTarget ? 'target-preview' : ''
+              }">
+                <span class="font-mono-num font-bold text-[9px] sm:text-[11px] leading-none">${displayLabel}</span>
+                <span class="text-[9px] sm:text-[11px] leading-none mt-0.5">${suit.symbol}</span>
+              </div>
+            `;
+          }).join('');
+
+          return `
+            <div class="sevens-board-grid items-center relative">
+              <!-- Suit Row Badge -->
+              <div class="h-full rounded-lg ${suit.badgeBg} flex flex-col items-center justify-center py-1 shadow-inner relative">
+                <span class="text-sm sm:text-base leading-none">${suit.symbol}</span>
+                ${isLocked ? '<span class="text-[8px] font-extrabold bg-amber-400 text-slate-950 px-1 rounded mt-0.5">MATI</span>' : ''}
+              </div>
+              ${slotsHtml}
+            </div>
+          `;
+        }).join('');
+      },
+
+      renderHumanDock() {
+        const mySeat = this.getLocalSeatIndex();
+        const me = this.state.players[mySeat];
+        const isMyTurn = !this.state.isGameOver && this.state.currentTurnIndex === mySeat;
+        const playableList = RuleEngine.getPlayableCards(me.hand, this.state.board, this.state.isVeryFirstTurn);
+        const isBuryMode = isMyTurn && playableList.length === 0 && me.hand.length > 0;
+        const isThinkFirstPhase = isMyTurn && playableList.length > 0 && !this.showPlayableHighlights;
+
+        // Update Local Identity Badges
+        document.getElementById('localPlayerAvatar').textContent = me.avatar;
+        document.getElementById('localPlayerName').textContent = me.name;
+        document.getElementById('localSeatBadge').textContent = `Kursi ${mySeat + 1}`;
+
+        // 1. Update Dock Border & Turn Mode Pill
+        const dockEl = document.getElementById('humanPlayerDock');
+        const modePill = document.getElementById('humanModePill');
+
+        if (!isMyTurn) {
+          const activePlayer = this.state.players[this.state.currentTurnIndex];
+          dockEl.className = 'w-full bg-black/40 border border-emerald-800/70 rounded-2xl p-2.5 sm:p-3 flex flex-col gap-2 shadow-xl transition-all duration-300 relative';
+          modePill.className = 'px-2.5 py-1 rounded-lg text-xs font-bold bg-slate-800 text-slate-300 border border-slate-700';
+          modePill.textContent = this.state.isGameOver
+            ? 'Permainan Selesai'
+            : `Menunggu Giliran ${activePlayer ? activePlayer.name : ''}...`;
+        } else if (isBuryMode) {
+          dockEl.className = 'w-full bg-orange-950/60 border-2 border-orange-500 rounded-2xl p-2.5 sm:p-3 flex flex-col gap-2 shadow-2xl transition-all duration-300 relative';
+          modePill.className = 'px-3 py-1 rounded-lg text-xs font-extrabold bg-orange-500 text-slate-950 border border-orange-300 animate-pulse';
+          modePill.textContent = '⚠️ TIDAK ADA JALAN — PILIH 1 KARTU UNTUK DIMATIKAN';
+        } else if (isThinkFirstPhase) {
+          dockEl.className = 'w-full bg-emerald-950/85 border-2 border-emerald-400 rounded-2xl p-2.5 sm:p-3 flex flex-col gap-2 shadow-2xl transition-all duration-300 relative';
+          modePill.className = 'px-3 py-1 rounded-lg text-xs font-extrabold bg-emerald-400 text-slate-950 border border-emerald-200';
+          modePill.textContent = this.state.isVeryFirstTurn
+            ? '🎯 GILIRAN ANDA — KELUARKAN 7♠ PERTAMA!'
+            : '🎯 GILIRAN ANDA — PILIH KARTU UNTUK DIKELUARKAN';
+        } else {
+          dockEl.className = 'w-full bg-emerald-950/85 border-2 border-amber-400 rounded-2xl p-2.5 sm:p-3 flex flex-col gap-2 shadow-2xl transition-all duration-300 relative';
+          modePill.className = 'px-3 py-1 rounded-lg text-xs font-extrabold bg-amber-400 text-slate-950 border border-amber-200';
+          modePill.textContent = this.state.isVeryFirstTurn
+            ? '🎯 GILIRAN ANDA — WAJIB KELUARKAN 7♠ PERTAMA!'
+            : `💡 BANTUAN AKTIF — PILIH KARTU KUNING (${playableList.length} BISA JALAN)`;
+        }
+
+        // 2. Update Counters & Buried Cards Drawer (with Minus Point formatting)
+        document.getElementById('humanCardCount').textContent = me.hand.length;
+        const myScore = RuleEngine.calculatePlayerScore(me, this.state.board);
+        const formattedLivePts = myScore.totalPoints === 0 ? '0 Poin' : `-${myScore.totalPoints} Poin`;
+        document.getElementById('humanBuriedCount').textContent = `${myScore.buriedCount} lbr`;
+        document.getElementById('humanLivePenaltyPts').textContent = formattedLivePts;
+        document.getElementById('humanBuriedFormulaText').textContent = `Total Minus: ${formattedLivePts}`;
+
+        const buriedListEl = document.getElementById('humanBuriedCardsList');
+        if (buriedListEl) {
+          if (myScore.cardBreakdown.length === 0) {
+            buriedListEl.innerHTML = `<span class="text-xs text-slate-400 italic">Belum ada kartu yang Anda matikan.</span>`;
+          } else {
+            buriedListEl.innerHTML = myScore.cardBreakdown.map(c => {
+              const sObj = SUITS.find(s => s.id === c.suit);
+              return `
+                <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-white border border-slate-300 text-xs font-mono-num shadow-sm">
+                  <strong class="${sObj.colorClass}">${RANK_LABELS[c.rank]}${sObj.symbol}</strong>
+                  <span class="text-[10px] px-1 rounded bg-slate-900 text-amber-300">-${c.points}pt</span>
+                </span>
+              `;
+            }).join('');
+          }
+        }
+
+        // 3. Render Hand Cards in 2 Rows (Top Row: up to 7 cards, Bottom Row: up to 6 cards)
+        const handContainer = document.getElementById('humanHandContainer');
+        if (me.hand.length === 0) {
+          handContainer.innerHTML = `
+            <div class="text-sm font-semibold text-emerald-300/80 py-6">
+              Seluruh kartu di tangan Anda telah habis!
+            </div>
+          `;
+          return;
+        }
+
+        const playableMap = new Map();
+        playableList.forEach(p => playableMap.set(`${p.suit}-${p.rank}`, p.placements));
+
+        const activePool = (playableList.length > 0 && this.showPlayableHighlights) ? playableList : me.hand;
+        const focusedItem = isMyTurn && activePool[this.kbFocusIndex]
+          ? `${activePool[this.kbFocusIndex].suit}-${activePool[this.kbFocusIndex].rank}`
+          : null;
+
+        const renderSingleCardHtml = (card) => {
+          const suitObj = SUITS.find(s => s.id === card.suit);
+          const cardKey = `${card.suit}-${card.rank}`;
+          const placements = playableMap.get(cardKey);
+          const isPlayable = isMyTurn && Boolean(placements);
+          const isSuitLocked = this.state.board[card.suit].lockedByAce !== null;
+          const isKbFocused = focusedItem === cardKey;
+          const isHinted = this.hintedCardKey === cardKey;
+          const isWrongShake = this.wrongClickedCardKey === cardKey;
+
+          let cardClass = '';
+          let topBadgeHtml = '';
+
+          if (!isMyTurn) {
+            cardClass = 'opacity-85 hover:-translate-y-1';
+            if (isSuitLocked) {
+              topBadgeHtml = `<span class="absolute -top-2 left-1/2 -translate-x-1/2 text-[7px] sm:text-[8px] font-extrabold px-1 py-0.2 rounded bg-slate-800 text-slate-300 border border-slate-600">🔒MATI</span>`;
+            }
+          } else if (isThinkFirstPhase) {
+            // FIRST 10 SECONDS: Do NOT highlight playable cards in yellow! Let the player think and pick any card.
+            cardClass = `think-first-card ${isKbFocused ? 'kb-focused' : ''} ${isWrongShake ? 'animate-wrong-shake' : ''}`;
+            if (isSuitLocked) {
+              topBadgeHtml = `<span class="absolute -top-2 left-1/2 -translate-x-1/2 text-[7px] sm:text-[8px] font-extrabold px-1 py-0.2 rounded bg-slate-800 text-slate-300 border border-slate-600">🔒MATI</span>`;
+            }
+          } else if (isPlayable) {
+            // AFTER 10 SECONDS (or Hint): Highlight playable cards in yellow & lift them up
+            cardClass = `playable ${isKbFocused ? 'kb-focused' : ''} ${isHinted ? 'hint-glow' : ''}`;
+            if (card.rank === 1 && placements.length === 2) {
+              topBadgeHtml = `<span class="absolute -top-2 left-1/2 -translate-x-1/2 text-[7px] sm:text-[8px] font-extrabold px-1 py-0.2 rounded bg-cyan-400 text-slate-950 shadow whitespace-nowrap">PILIH</span>`;
+            } else {
+              topBadgeHtml = `<span class="absolute -top-1.5 left-1/2 -translate-x-1/2 w-2 h-2 rounded-full bg-amber-400"></span>`;
+            }
+          } else if (isBuryMode) {
+            // Silent Trap: 6 & 8 look identical to normal cards in Bury Mode!
+            const pts = RuleEngine.getCardPenaltyPoints(card, this.state.board);
+            cardClass = `bury-candidate ${isKbFocused ? 'kb-focused' : ''} ${isHinted ? 'hint-glow' : ''}`;
+            topBadgeHtml = `<span class="absolute -top-2 left-1/2 -translate-x-1/2 text-[7px] sm:text-[8px] font-mono-num font-extrabold px-1 py-0.2 rounded ${
+              isSuitLocked ? 'bg-amber-400 text-slate-950' : 'bg-orange-500 text-white'
+            } shadow whitespace-nowrap">${isSuitLocked ? `🔒-${pts}pt` : `TUTUP (-${pts}pt)`}</span>`;
+          } else {
+            cardClass = `unplayable ${isWrongShake ? 'animate-wrong-shake' : ''}`;
+            if (isSuitLocked) {
+              topBadgeHtml = `<span class="absolute -top-2 left-1/2 -translate-x-1/2 text-[7px] sm:text-[8px] font-bold px-1 rounded bg-slate-800 text-slate-400">🔒</span>`;
+            }
+          }
+
+          // All cards in hand are clickable when it's the player's turn (either to play, to test in think-first mode, or to bury)
+          const clickAttr = isMyTurn
+            ? `onclick="GameApp.handleHumanCardClick('${card.suit}', ${card.rank})"`
+            : '';
+
+          const hoverAttr = (isPlayable && this.showPlayableHighlights)
+            ? `onmouseenter="GameApp.setHoverPreview('${card.suit}', ${card.rank})" onmouseleave="GameApp.clearHoverPreview()"`
+            : '';
+
+          return `
+            <div ${clickAttr} ${hoverAttr}
+              class="hand-card rounded-xl bg-white border border-slate-300 p-1 sm:p-2 flex flex-col justify-between relative select-none shadow-md ${cardClass}">
+              ${topBadgeHtml}
+              <div class="flex items-center justify-between leading-none">
+                <span class="font-mono-num font-extrabold text-[11px] sm:text-sm ${suitObj.colorClass}">${RANK_LABELS[card.rank]}</span>
+                <span class="text-[10px] sm:text-sm ${suitObj.colorClass}">${suitObj.symbol}</span>
+              </div>
+              <div class="text-lg sm:text-3xl text-center leading-none my-auto ${suitObj.colorClass}">
+                ${suitObj.symbol}
+              </div>
+              <div class="flex items-center justify-end leading-none">
+                <span class="font-mono-num font-bold text-[9px] sm:text-xs ${suitObj.colorClass} opacity-80">${RANK_LABELS[card.rank]}</span>
+              </div>
+            </div>
+          `;
+        };
+
+        // Split cards into 2 rows: Top Row up to 7 cards, Bottom Row remaining (up to 6 cards)
+        const topRowCards = me.hand.slice(0, 7);
+        const bottomRowCards = me.hand.slice(7);
+
+        const topRowHtml = `
+          <div class="flex items-center justify-center gap-1 sm:gap-2 w-full">
+            ${topRowCards.map(renderSingleCardHtml).join('')}
+          </div>
+        `;
+
+        const bottomRowHtml = bottomRowCards.length > 0
+          ? `
+            <div class="flex items-center justify-center gap-1 sm:gap-2 w-full">
+              ${bottomRowCards.map(renderSingleCardHtml).join('')}
+            </div>
+          `
+          : '';
+
+        handContainer.innerHTML = topRowHtml + bottomRowHtml;
+      },
+
+      setHoverPreview(suitId, rank) {
+        if (!this.state) return;
+        const placements = RuleEngine.getValidPlacementsForCard(
+          this.state.board,
+          { suit: suitId, rank },
+          this.state.isVeryFirstTurn
+        );
+        this.hoveredTargets = placements.map(p => ({
+          suit: suitId,
+          colKey: p === 'left' ? 'ace_left' : p === 'right' ? 'ace_right' : String(rank)
+        }));
+        this.renderBoard();
+      },
+
+      clearHoverPreview() {
+        this.hoveredTargets = [];
+        this.renderBoard();
+      },
+
+      toggleBuriedTray() {
+        this.buriedTrayOpen = !this.buriedTrayOpen;
+        const tray = document.getElementById('humanBuriedTray');
+        const chevron = document.getElementById('buriedTrayChevron');
+        if (this.buriedTrayOpen) {
+          tray.classList.remove('hidden');
+          tray.classList.add('flex');
+          chevron.textContent = '▲';
+        } else {
+          tray.classList.add('hidden');
+          tray.classList.remove('flex');
+          chevron.textContent = '▼';
+        }
+      },
+
+      /**
+       * =======================================================================
+       * MODAL CONTROLLERS (Mandatory Name, 1-Click Invite Lobby, Ace Choice, Rules, Results)
+       * =======================================================================
+       */
+      handleInviteButtonClick() {
+        // Ensure player has entered their name at least once before generating the 1-Click Invite Link
+        if (!MultiplayerManager.hasConfirmedNameInSession && (!MultiplayerManager.myNickname || MultiplayerManager.myNickname === 'Anda')) {
+          MultiplayerManager.openMandatoryNameModal('host_create');
+          return;
+        }
+        this.openLobbyModal();
+      },
+
+      openLobbyModal() {
+        if (MultiplayerManager.mode === 'solo') {
+          MultiplayerManager.createRoomAutomatically();
+        } else {
+          MultiplayerManager.renderLobbyUI();
+        }
+        const modal = document.getElementById('lobbyModal');
+        modal.classList.remove('hidden');
+        modal.classList.add('flex');
+      },
+
+      closeLobbyModal() {
+        const modal = document.getElementById('lobbyModal');
+        modal.classList.add('hidden');
+        modal.classList.remove('flex');
+      },
+
+      openAceChoiceModal(suitId) {
+        this.pendingAceSuit = suitId;
+        const suitObj = SUITS.find(s => s.id === suitId);
+        const badge = document.getElementById('aceModalCardBadge');
+        badge.textContent = `A${suitObj.symbol}`;
+        badge.className = `px-2 py-0.5 rounded bg-white font-mono-num font-extrabold ${suitObj.colorClass}`;
+
+        const modal = document.getElementById('aceChoiceModal');
+        modal.classList.remove('hidden');
+        modal.classList.add('flex');
+      },
+
+      closeAceChoiceModal() {
+        this.pendingAceSuit = null;
+        const modal = document.getElementById('aceChoiceModal');
+        modal.classList.add('hidden');
+        modal.classList.remove('flex');
+      },
+
+      confirmAcePlacement(side) {
+        if (!this.pendingAceSuit) return;
+        const suitId = this.pendingAceSuit;
+        const mySeat = this.getLocalSeatIndex();
+        this.closeAceChoiceModal();
+        this.sendOrExecutePlayCard(mySeat, suitId, 1, side);
+      },
+
+      openRulesModal() {
+        document.getElementById('cfgCpuDifficulty').value = this.settings.cpuDifficulty;
+        document.getElementById('cfgCpuSpeed').value = String(this.settings.cpuDelayMs);
+        const modal = document.getElementById('rulesModal');
+        modal.classList.remove('hidden');
+        modal.classList.add('flex');
+      },
+
+      closeRulesModal() {
+        const modal = document.getElementById('rulesModal');
+        modal.classList.add('hidden');
+        modal.classList.remove('flex');
+      },
+
+      updateQuickSettings() {
+        this.settings.cpuDifficulty = document.getElementById('cfgCpuDifficulty').value;
+        this.settings.cpuDelayMs = Number(document.getElementById('cfgCpuSpeed').value);
+      },
+
+      /**
+       * Renders the End-of-Game Modal with:
+       * 1. Players sorted from LEAST minus points (Rank 1 at top) down to MOST minus points (Rank 4 at bottom).
+       * 2. Minus point formatting (0 Poin, -5 Poin, -24 Poin, etc.).
+       * 3. Huge spotlight & "🚨 WONG KALAHAN! 💀" banner on the losing player at the bottom.
+       */
+      showResultModal() {
+        if (!this.state) return;
+        const modal = document.getElementById('resultModal');
+        const listEl = document.getElementById('resultStandingsList');
+        const titleEl = document.getElementById('resultTitleText');
+        const subtitleEl = document.getElementById('resultSubtitleText');
+        const trophyEl = document.getElementById('resultTrophyEmoji');
+        const aceSummaryEl = document.getElementById('resultAceRuleSummary');
+        const playAgainBtn = document.getElementById('resultPlayAgainBtn');
+
+        const mySeat = this.getLocalSeatIndex();
+        const aceInfo = RuleEngine.getBuriedAcePointValue(this.state.board);
+        aceSummaryEl.textContent = `Status Nilai Kartu As: ${aceInfo.reason}`;
+        subtitleEl.textContent = this.state.endReason || 'Urutan Papan Skor dari Minus Paling Sedikit ke Minus Paling Banyak';
+
+        if (playAgainBtn) {
+          playAgainBtn.textContent = MultiplayerManager.mode === 'client'
+            ? 'Menunggu Host Mulai Ronde Baru...'
+            : 'Main Ronde Baru (Rematch)';
+        }
+
+        const scoredPlayers = this.state.players.map(p => ({
+          player: p,
+          score: RuleEngine.calculatePlayerScore(p, this.state.board)
+        }));
+
+        // Sort from LEAST minus/penalty points (top, Rank 1) to MOST minus/penalty points (bottom, Rank 4 / WONG KALAHAN!)
+        scoredPlayers.sort((a, b) => {
+          if (a.score.violatedGoldenRule && !b.score.violatedGoldenRule) return 1;
+          if (!a.score.violatedGoldenRule && b.score.violatedGoldenRule) return -1;
+          if (a.score.totalPoints !== b.score.totalPoints) {
+            return a.score.totalPoints - b.score.totalPoints;
+          }
+          return a.score.buriedCount - b.score.buriedCount;
+        });
+
+        const winnerEntry = scoredPlayers[0];
+        const loserEntry = scoredPlayers[scoredPlayers.length - 1];
+        const loserMinusText = loserEntry.score.totalPoints === 0 ? '0 Poin' : `-${loserEntry.score.totalPoints} Poin`;
+
+        if (loserEntry.player.id === mySeat) {
+          trophyEl.textContent = '💀';
+          titleEl.textContent = `🚨 WONG KALAHAN: ${loserEntry.player.name.toUpperCase()}!`;
+        } else if (winnerEntry.player.id === mySeat) {
+          trophyEl.textContent = '🏆';
+          titleEl.textContent = `Anda Aman! ${loserEntry.player.name} Jadi WONG KALAHAN (${loserMinusText})`;
+        } else {
+          trophyEl.textContent = '🚨';
+          titleEl.textContent = `WONG KALAHAN: ${loserEntry.player.name} (${loserMinusText})!`;
+        }
+
+        listEl.innerHTML = scoredPlayers.map((entry, idx) => {
+          const { player, score } = entry;
+          const isWinner = idx === 0;
+          const isLoser = idx === scoredPlayers.length - 1;
+          const isMe = player.id === mySeat;
+          const minusScoreLabel = score.totalPoints === 0 ? '0 Poin' : `-${score.totalPoints} Poin`;
+
+          let statusBadge = '';
+          if (isLoser) {
+            statusBadge = `<span class="text-xs sm:text-sm font-extrabold px-2.5 py-0.5 rounded-lg bg-amber-400 text-slate-950 shadow-md tracking-wide uppercase">🚨 WONG KALAHAN! 💀</span>`;
+          } else if (isWinner) {
+            statusBadge = `<span class="text-[10px] font-extrabold px-2 py-0.5 rounded bg-emerald-400 text-slate-950">🏆 PERINGKAT #1 (TERAMAN)</span>`;
+          } else {
+            statusBadge = `<span class="text-[10px] font-bold px-2 py-0.5 rounded bg-slate-700 text-slate-200">Peringkat #${idx + 1}</span>`;
+          }
+
+          const violationReasonBanner = score.violatedGoldenRule && score.violationDetail
+            ? `<div class="mb-2.5 px-3 py-2 rounded-xl bg-red-950 border-2 border-red-400 text-xs font-bold text-red-100 shadow-inner">
+                 🚨 <strong>Penyebab Kalah Telak:</strong> ${score.violationDetail}
+               </div>`
+            : '';
+
+          const buriedCardsHtml = score.cardBreakdown.length === 0
+            ? `<span class="text-xs text-emerald-400 font-semibold">✨ Bersih! Tidak ada kartu yang dimatikan (0 Poin)</span>`
+            : score.cardBreakdown.map(c => {
+                const suitObj = SUITS.find(s => s.id === c.suit);
+                const isFatal68 = RuleEngine.isGoldenRuleCard(c.rank);
+                return `
+                  <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-white border ${
+                    isFatal68 ? 'border-red-600 ring-2 ring-red-500' : 'border-slate-300'
+                  } text-xs font-mono-num">
+                    <strong class="${suitObj.colorClass}">${RANK_LABELS[c.rank]}${suitObj.symbol}</strong>
+                    <span class="text-[10px] px-1 rounded ${isFatal68 ? 'bg-red-600 text-white' : 'bg-slate-900 text-amber-300'}">${
+                      isFatal68 ? 'FATAL (6/8)!' : `-${c.points}pt`
+                    }</span>
+                  </span>
+                `;
+              }).join('');
+
+          // Spotlighted design specifically for the losing player (Rank 4 at the bottom)
+          if (isLoser) {
+            return `
+              <div class="mt-4 p-4 sm:p-5 rounded-2xl bg-gradient-to-br from-red-950 via-rose-950 to-slate-950 border-2 border-red-500 wong-kalahan-spotlight relative overflow-hidden">
+                <!-- Top Spotlight Banner -->
+                <div class="flex flex-wrap items-center justify-between gap-2 pb-2.5 mb-3 border-b border-red-500/40">
+                  <div class="flex items-center gap-2">
+                    <span class="px-3 py-1 rounded-full bg-gradient-to-r from-red-600 to-amber-500 text-white font-extrabold text-xs sm:text-sm tracking-wider uppercase shadow-lg">
+                      🚨 WONG KALAHAN! 💀
+                    </span>
+                    <span class="text-xs font-bold text-red-200">
+                      ${score.violatedGoldenRule ? '(Kalah Otomatis Aturan 6/8)' : '(Minus Paling Banyak)'}
+                    </span>
+                  </div>
+                  <span class="text-[11px] font-mono-num font-bold text-red-300">Peringkat #4</span>
+                </div>
+
+                <div class="flex flex-wrap items-center justify-between gap-3 mb-3">
+                  <div class="flex items-center gap-3">
+                    <div class="w-12 h-12 rounded-2xl bg-red-900/80 border-2 border-amber-400 flex items-center justify-center text-2xl shadow-lg">
+                      ${player.avatar}
+                    </div>
+                    <div>
+                      <div class="flex items-center gap-2">
+                        <span class="font-extrabold text-lg sm:text-xl text-white tracking-tight">${player.name}</span>
+                        ${isMe ? '<span class="text-[10px] px-2 py-0.5 rounded bg-amber-400 text-slate-950 font-extrabold">ANDA</span>' : ''}
+                      </div>
+                      <span class="text-xs text-red-200 font-medium">Menutup ${score.buriedCount} kartu mati</span>
+                    </div>
+                  </div>
+
+                  <div class="font-mono-num text-right bg-black/45 px-3.5 py-2 rounded-xl border border-red-500/50">
+                    <span class="text-[10px] uppercase tracking-wider text-red-300 block font-bold">Total Minus</span>
+                    <span class="text-xl sm:text-2xl font-extrabold text-amber-300">${minusScoreLabel}</span>
+                  </div>
+                </div>
+
+                ${violationReasonBanner}
+
+                <div class="flex flex-wrap items-center gap-1.5 pt-2.5 border-t border-red-500/30">
+                  ${buriedCardsHtml}
+                </div>
+              </div>
+            `;
+          }
+
+          return `
+            <div class="p-3 rounded-xl border ${
+              isWinner ? 'bg-emerald-950/50 border-emerald-500/60' : 'bg-slate-800/75 border-slate-700'
+            }">
+              <div class="flex flex-wrap items-center justify-between gap-2 mb-1.5">
+                <div class="flex items-center gap-2">
+                  <span class="text-base">${player.avatar}</span>
+                  <span class="font-extrabold text-sm text-white">${player.name}</span>
+                  ${isMe ? '<span class="text-[9px] px-1.5 py-0.2 rounded bg-indigo-500 text-white font-bold">ANDA</span>' : ''}
+                  ${statusBadge}
+                </div>
+                <div class="font-mono-num text-right">
+                  <span class="text-xs text-slate-400">${score.buriedCount} kartu mati • Total:</span>
+                  <span class="text-sm sm:text-base font-extrabold text-emerald-300 ml-1">${minusScoreLabel}</span>
+                </div>
+              </div>
+              <div class="flex flex-wrap items-center gap-1.5 pt-1.5 border-t border-white/10">
+                ${buriedCardsHtml}
+              </div>
+            </div>
+          `;
+        }).join('');
+
+        modal.classList.remove('hidden');
+        modal.classList.add('flex');
+      },
+
+      closeResultModal() {
+        const modal = document.getElementById('resultModal');
+        modal.classList.add('hidden');
+        modal.classList.remove('flex');
+      },
+
+      toggleSound() {
+        SoundEngine.enabled = !SoundEngine.enabled;
+        document.getElementById('soundIcon').textContent = SoundEngine.enabled ? '🔊' : '🔇';
+      },
+
+      saveStateToStorage() {
+        try {
+          if (this.state && MultiplayerManager.mode === 'solo') {
+            localStorage.setItem(STORAGE_KEY, JSON.stringify(this.state));
+          }
+        } catch (e) {}
+      },
+
+      loadStateFromStorage() {
+        try {
+          if (MultiplayerManager.mode !== 'solo') return false;
+          const raw = localStorage.getItem(STORAGE_KEY);
+          if (!raw) return false;
+          const parsed = JSON.parse(raw);
+          if (!parsed || !parsed.board || !parsed.players || parsed.isGameOver) return false;
+          this.state = parsed;
+          return true;
+        } catch (e) {
+          return false;
+        }
+      }
+    };
+
+    window.onload = function () {
+      GameApp.init();
+    };
+  </script>
+</body>
+</html>
